@@ -3,7 +3,7 @@ Service d'alertes : création, mise à jour, statistiques.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from datetime import datetime
 
 from backend.database.redis_client import publish_alert, set_threat_score

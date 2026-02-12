@@ -46,6 +46,9 @@ class DetectionService:
         Returns:
             True si l'initialisation est réussie.
         """
+        if self._is_ready:
+            return True
+
         logger.info("Initialisation du service de détection...")
 
         # Charger tous les artifacts
@@ -140,6 +143,9 @@ class DetectionService:
         ip_reputation: float = 0.0,
     ) -> Dict[str, Any]:
         """Exécute l'inférence supervisée + non-supervisée + fusion."""
+        if not self.supervised or not self.unsupervised:
+            return {"error": "Prédicteurs non initialisés"}
+
         # Supervisé
         supervised_result = self.supervised.predict(processed_features)
 

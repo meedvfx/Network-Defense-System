@@ -3,12 +3,10 @@ Service de capture réseau : gère le sniffer et le flow builder.
 """
 
 import logging
-import asyncio
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 from capture.packet_sniffer import PacketSniffer
 from capture.flow_builder import FlowBuilder, NetworkFlow
-from capture.feature_extractor import FeatureExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +25,6 @@ class CaptureService:
             buffer_size=buffer_size,
         )
         self.flow_builder = FlowBuilder(flow_timeout=flow_timeout)
-        self.feature_extractor = FeatureExtractor()
-        self._processing = False
 
     def start_capture(self):
         """Démarre la capture réseau."""

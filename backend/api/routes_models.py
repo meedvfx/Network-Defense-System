@@ -6,7 +6,6 @@ En mode production, les modèles sont figés (pas de versioning dynamique).
 from fastapi import APIRouter
 from typing import Dict, Any
 
-from ai.inference.model_loader import ModelLoader
 from ai.config.model_config import artifact_paths, inference_config
 
 router = APIRouter(prefix="/api/models", tags=["Models"])

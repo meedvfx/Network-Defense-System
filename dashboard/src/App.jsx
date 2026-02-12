@@ -1,21 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Shield, AlertTriangle, Activity, Globe, BarChart3, Wifi, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Map, Clock } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Clock } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-
-// ========================================
-// API Helpers
-// ========================================
-const API_BASE = '/api'
-
-async function fetchAPI(endpoint) {
-    try {
-        const res = await fetch(`${API_BASE}${endpoint}`)
-        if (!res.ok) return null
-        return await res.json()
-    } catch {
-        return null
-    }
-}
 
 // ========================================
 // DEMO DATA (utilisé quand l'API n'est pas connectée)

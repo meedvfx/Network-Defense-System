@@ -7,7 +7,20 @@ from pydantic import BaseModel
 from typing import Optional, List
 import numpy as np
 
+from backend.services.detection_service import DetectionService
+
 router = APIRouter(prefix="/api/detection", tags=["Detection"])
+_detection_service = DetectionService()
+_init_attempted = False
+
+
+def get_detection_service() -> DetectionService:
+    """Retourne une instance prête du service de détection (lazy init)."""
+    global _init_attempted
+    if not _detection_service.is_ready() and not _init_attempted:
+        _init_attempted = True
+        _detection_service.initialize()
+    return _detection_service
 
 
 class DetectionRequest(BaseModel):
@@ -30,20 +43,22 @@ class DetectionResponse(BaseModel):
 
 
 @router.post("/analyze", response_model=DetectionResponse)
-async def analyze_features(request: DetectionRequest):
+async def analyze_features(
+    request: DetectionRequest,
+    service: DetectionService = Depends(get_detection_service),
+):
     """
     Analyse un vecteur de features via le pipeline hybride.
     Utile pour les tests et l'intégration.
     """
-    from backend.services.detection_service import DetectionService
-
-    service = DetectionService()
-
     if not service.is_ready():
         raise HTTPException(status_code=503, detail="Modèles non chargés")
 
     features = np.array(request.features, dtype=np.float32)
     result = service.analyze_features(features, request.ip_reputation)
+
+    if "error" in result or "decision" not in result:
+        raise HTTPException(status_code=503, detail=result.get("error", "Service d'inférence indisponible"))
 
     decision = result["decision"]
     return DetectionResponse(
@@ -62,10 +77,17 @@ async def analyze_features(request: DetectionRequest):
 @router.get("/status")
 async def detection_status():
     """Retourne l'état du service de détection."""
+    service = get_detection_service()
+    status_data = service.get_status()
     return {
-        "status": "running",
-        "models_loaded": True,
-        "message": "Service de détection opérationnel",
+        "status": "running" if status_data.get("is_ready") else "degraded",
+        "models_loaded": status_data.get("is_ready", False),
+        "artifacts": status_data.get("artifacts", {}),
+        "message": (
+            "Service de détection opérationnel"
+            if status_data.get("is_ready")
+            else "Service démarré, modèles non chargés"
+        ),
     }
 
 
