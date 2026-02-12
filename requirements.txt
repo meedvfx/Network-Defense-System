@@ -1,0 +1,55 @@
+# ============================================
+# Network Defense System - Python Dependencies
+# ============================================
+
+# ---- Web Framework ----
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+websockets>=14.0
+python-multipart>=0.0.20
+
+# ---- Database ----
+sqlalchemy>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+psycopg2-binary>=2.9.10
+
+# ---- Redis ----
+redis>=5.2.0
+
+# ---- Deep Learning ----
+tensorflow>=2.20.0
+keras>=3.8.0
+
+# ---- Data Processing ----
+numpy>=2.1.0
+pandas>=2.2.0
+scikit-learn>=1.6.0
+scipy>=1.15.0
+joblib>=1.4.0
+imbalanced-learn>=0.12.0
+
+# ---- Network Capture ----
+scapy>=2.6.0
+
+# ---- GeoIP ----
+httpx>=0.28.0
+
+# ---- Configuration ----
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.0
+
+# ---- Logging & Monitoring ----
+psutil>=6.0.0
+
+# ---- Security ----
+slowapi>=0.1.9
+
+# ---- Testing ----
+pytest>=8.3.0
+pytest-asyncio>=0.25.0
+pytest-cov>=6.0.0
+
+# ---- Utilities ----
+orjson>=3.10.0
