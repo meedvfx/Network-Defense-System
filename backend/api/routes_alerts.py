@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database.connection import get_db
-from backend.database.repository import AlertRepository
+from backend.database import repository
 
 router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
 
@@ -39,7 +39,7 @@ async def get_alerts(
     db: AsyncSession = Depends(get_db),
 ):
     """Liste les alertes avec filtres et pagination."""
-    alerts = await AlertRepository.get_alerts(
+    alerts = await repository.get_alerts(
         db=db, severity=severity, status=status, limit=limit, offset=offset
     )
     return [
@@ -69,7 +69,7 @@ async def update_alert_status(
     if request.status not in valid_statuses:
         return {"error": f"Status invalide. Valides : {valid_statuses}"}
 
-    await AlertRepository.update_status(db, alert_id, request.status)
+    await repository.update_alert_status(db, alert_id, request.status)
     return {"status": "updated", "alert_id": alert_id, "new_status": request.status}
 
 
@@ -79,7 +79,7 @@ async def get_alert_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Statistiques des alertes sur une période."""
-    stats = await AlertRepository.get_stats(db, hours=hours)
+    stats = await repository.get_alert_stats(db, hours=hours)
     return stats
 
 
@@ -90,5 +90,5 @@ async def get_top_ips(
     db: AsyncSession = Depends(get_db),
 ):
     """Top IPs malveillantes par nombre d'alertes."""
-    ips = await AlertRepository.get_top_ips(db, limit=limit, hours=hours)
+    ips = await repository.get_top_alert_ips(db, limit=limit, hours=hours)
     return ips

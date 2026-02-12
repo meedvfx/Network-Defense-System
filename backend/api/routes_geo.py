@@ -8,12 +8,10 @@ from typing import Optional, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database.connection import get_db
-from backend.database.repository import GeoRepository
-from backend.services.geo_service import GeoService
+from backend.database import repository
+from backend.services import geo_service
 
 router = APIRouter(prefix="/api/geo", tags=["Geolocation"])
-
-geo_service = GeoService()
 
 
 class GeoResponse(BaseModel):
@@ -59,9 +57,7 @@ async def get_attack_map(
     db: AsyncSession = Depends(get_db),
 ):
     """Retourne les données pour la carte des attaques."""
-    from backend.database.repository import AlertRepository
-
-    top_ips = await AlertRepository.get_top_ips(db, limit=50, hours=24)
+    top_ips = await repository.get_top_alert_ips(db, limit=50, hours=24)
     ips = [entry["ip"] for entry in top_ips]
 
     if not ips:
@@ -88,7 +84,7 @@ async def get_attack_map(
 @router.get("/cached")
 async def get_cached_geolocations(db: AsyncSession = Depends(get_db)):
     """Retourne toutes les géolocalisations en cache DB."""
-    geos = await GeoRepository.get_all(db)
+    geos = await repository.get_all_geolocations(db)
     return [
         {
             "ip_address": g.ip_address,

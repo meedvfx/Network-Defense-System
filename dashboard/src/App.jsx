@@ -2,44 +2,36 @@ import React, { useState, useEffect } from 'react'
 import { Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Clock } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
+const API_BASE = '/api'
+const ATTACK_COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#3b82f6']
+
+async function fetchAPI(endpoint, fallback = null, options = {}) {
+    try {
+        const res = await fetch(`${API_BASE}${endpoint}`, options)
+        if (!res.ok) return fallback
+        return await res.json()
+    } catch {
+        return fallback
+    }
+}
+
 // ========================================
-// DEMO DATA (utilisé quand l'API n'est pas connectée)
+// Shared helpers
 // ========================================
-const DEMO_ALERTS = [
-    { id: '1', severity: 'critical', attack_type: 'DDoS', threat_score: 0.94, src_ip: '185.220.101.34', decision: 'confirmed_attack', timestamp: new Date(Date.now() - 120000).toISOString() },
-    { id: '2', severity: 'high', attack_type: 'PortScan', threat_score: 0.78, src_ip: '45.33.32.156', decision: 'suspicious', timestamp: new Date(Date.now() - 300000).toISOString() },
-    { id: '3', severity: 'critical', attack_type: 'BruteForce', threat_score: 0.91, src_ip: '103.99.0.34', decision: 'confirmed_attack', timestamp: new Date(Date.now() - 600000).toISOString() },
-    { id: '4', severity: 'medium', attack_type: 'WebAttack-XSS', threat_score: 0.56, src_ip: '192.168.1.105', decision: 'suspicious', timestamp: new Date(Date.now() - 900000).toISOString() },
-    { id: '5', severity: 'high', attack_type: 'Botnet', threat_score: 0.82, src_ip: '23.94.143.68', decision: 'confirmed_attack', timestamp: new Date(Date.now() - 1200000).toISOString() },
-    { id: '6', severity: 'low', attack_type: null, threat_score: 0.12, src_ip: '10.0.0.45', decision: 'normal', timestamp: new Date(Date.now() - 1500000).toISOString() },
-    { id: '7', severity: 'critical', attack_type: 'DoS-SlowHTTPTest', threat_score: 0.95, src_ip: '193.35.18.175', decision: 'confirmed_attack', timestamp: new Date(Date.now() - 1800000).toISOString() },
-    { id: '8', severity: 'medium', attack_type: 'Unknown Anomaly', threat_score: 0.63, src_ip: '87.236.176.23', decision: 'unknown_anomaly', timestamp: new Date(Date.now() - 2100000).toISOString() },
-]
+const emptyOverview = {
+    threat_score: 0,
+    total_alerts: 0,
+    alerts_by_severity: {},
+    anomaly_rate: 0,
+    total_flows_analyzed: 0,
+}
 
-const DEMO_TRAFFIC = Array.from({ length: 24 }, (_, i) => ({
-    time: `${String(i).padStart(2, '0')}:00`,
-    normal: Math.floor(800 + Math.random() * 400),
-    suspicious: Math.floor(20 + Math.random() * 60),
-    attacks: Math.floor(5 + Math.random() * 25),
-}))
-
-const DEMO_DISTRIBUTION = [
-    { name: 'DDoS', value: 34, color: '#ef4444' },
-    { name: 'PortScan', value: 22, color: '#f59e0b' },
-    { name: 'BruteForce', value: 18, color: '#8b5cf6' },
-    { name: 'DoS', value: 12, color: '#ec4899' },
-    { name: 'Botnet', value: 8, color: '#06b6d4' },
-    { name: 'Web Attack', value: 6, color: '#10b981' },
-]
-
-const DEMO_GEO_MARKERS = [
-    { ip: '185.220.101.34', lat: 51.5, lng: -0.12, country: 'UK', city: 'London', alert_count: 12 },
-    { ip: '103.99.0.34', lat: 1.35, lng: 103.82, country: 'Singapore', city: 'Singapore', alert_count: 8 },
-    { ip: '23.94.143.68', lat: 39.95, lng: -75.16, country: 'US', city: 'Philadelphia', alert_count: 15 },
-    { ip: '193.35.18.175', lat: 52.52, lng: 13.40, country: 'Germany', city: 'Berlin', alert_count: 6 },
-    { ip: '45.33.32.156', lat: 37.77, lng: -122.42, country: 'US', city: 'San Francisco', alert_count: 9 },
-    { ip: '87.236.176.23', lat: 55.75, lng: 37.62, country: 'Russia', city: 'Moscow', alert_count: 21 },
-]
+const toPieDistribution = (distribution = []) =>
+    distribution.map((item, index) => ({
+        name: item.label,
+        value: item.count,
+        color: ATTACK_COLORS[index % ATTACK_COLORS.length],
+    }))
 
 // ========================================
 // ThreatScoreRing Component
@@ -294,7 +286,7 @@ function Sidebar({ activeView, setActiveView }) {
             <div style={{ borderTop: '1px solid rgba(59,130,246,0.15)', paddingTop: '16px', marginTop: '8px' }}>
                 <div className="nav-item" style={{ cursor: 'default' }}>
                     <Radio size={16} color="#10b981" />
-                    <span style={{ fontSize: '12px', color: '#10b981' }}>Capture active</span>
+                    <span style={{ fontSize: '12px', color: '#10b981' }}>Capture réseau</span>
                 </div>
             </div>
         </aside>
@@ -305,18 +297,88 @@ function Sidebar({ activeView, setActiveView }) {
 // Dashboard Overview
 // ========================================
 function DashboardOverview() {
-    const [threatScore, setThreatScore] = useState(0.72)
+    const [overview, setOverview] = useState(emptyOverview)
+    const [alerts, setAlerts] = useState([])
+    const [traffic, setTraffic] = useState([])
+    const [distribution, setDistribution] = useState([])
+    const [markers, setMarkers] = useState([])
+    const [captureRunning, setCaptureRunning] = useState(false)
+    const [captureMessage, setCaptureMessage] = useState('')
+    const [captureInterfaces, setCaptureInterfaces] = useState([])
+    const [selectedInterface, setSelectedInterface] = useState('auto')
+    const [captureStats, setCaptureStats] = useState({ packets_captured: 0, active_flows: 0, completed_flows: 0 })
 
-    // Oscillation dynamique du threat score
     useEffect(() => {
-        const interval = setInterval(() => {
-            setThreatScore(prev => {
-                const delta = (Math.random() - 0.5) * 0.04
-                return Math.max(0.1, Math.min(0.95, prev + delta))
-            })
-        }, 3000)
-        return () => clearInterval(interval)
+        let mounted = true
+
+        const load = async () => {
+            const [overviewData, recentAlerts, trafficData, attackData, mapData, captureStatus, interfacesData] = await Promise.all([
+                fetchAPI('/dashboard/overview', emptyOverview),
+                fetchAPI('/dashboard/recent-alerts', []),
+                fetchAPI('/dashboard/traffic-timeseries', { series: [] }),
+                fetchAPI('/dashboard/attack-distribution', { distribution: [] }),
+                fetchAPI('/geo/attack-map', { markers: [] }),
+                fetchAPI('/detection/capture/status', { is_running: false }),
+                fetchAPI('/detection/capture/interfaces', { configured_interface: 'auto', available_interfaces: [] }),
+            ])
+
+            if (!mounted) return
+            setOverview(overviewData || emptyOverview)
+            setAlerts(Array.isArray(recentAlerts) ? recentAlerts : [])
+            setTraffic(trafficData?.series || [])
+            setDistribution(toPieDistribution(attackData?.distribution || []))
+            setMarkers(mapData?.markers || [])
+            setCaptureRunning(Boolean(captureStatus?.is_running))
+            setCaptureStats(captureStatus || { packets_captured: 0, active_flows: 0, completed_flows: 0 })
+            setCaptureInterfaces(interfacesData?.available_interfaces || [])
+            setSelectedInterface(prev => (
+                prev && prev !== 'auto'
+                    ? prev
+                    : (interfacesData?.configured_interface || 'auto')
+            ))
+            if (captureStatus?.last_error) {
+                setCaptureMessage(`Erreur capture: ${captureStatus.last_error}`)
+            }
+        }
+
+        load()
+        const interval = setInterval(load, 5000)
+        return () => {
+            mounted = false
+            clearInterval(interval)
+        }
     }, [])
+
+    const controlCapture = async (action) => {
+        const response = await fetchAPI(`/detection/capture/${action}`, null, { method: 'POST' })
+        if (response?.message) {
+            setCaptureMessage(response.message)
+        }
+        if (response?.details?.last_error) {
+            setCaptureMessage(`Erreur capture: ${response.details.last_error}`)
+        }
+        const status = await fetchAPI('/detection/capture/status', { is_running: false })
+        setCaptureRunning(Boolean(status?.is_running))
+        setCaptureStats(status || { packets_captured: 0, active_flows: 0, completed_flows: 0 })
+        if (status?.last_error) {
+            setCaptureMessage(`Erreur capture: ${status.last_error}`)
+        }
+    }
+
+    const applyInterface = async () => {
+        const response = await fetchAPI('/detection/capture/interface', null, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interface: selectedInterface || 'auto' }),
+        })
+        if (response?.message) {
+            setCaptureMessage(response.message)
+        }
+    }
+
+    const threatScore = Number(overview?.threat_score || 0)
+    const criticalCount = Number(overview?.alerts_by_severity?.critical || 0)
+    const flowsAnalyzed = Number(overview?.total_flows_analyzed || 0) || Number(captureStats?.packets_captured || 0)
 
     return (
         <>
@@ -328,40 +390,59 @@ function DashboardOverview() {
                 <div className="header-actions">
                     <div className="status-badge">
                         <span className="status-dot" />
-                        Système opérationnel
+                        {captureRunning ? 'Capture active' : 'Capture arrêtée'}
                     </div>
+                    <select
+                        className="nav-item"
+                        value={selectedInterface}
+                        onChange={(e) => setSelectedInterface(e.target.value)}
+                        disabled={captureRunning}
+                    >
+                        <option value="auto">auto</option>
+                        {captureInterfaces.map((iface) => (
+                            <option key={iface} value={iface}>{iface}</option>
+                        ))}
+                    </select>
+                    <button className="nav-item" onClick={applyInterface} disabled={captureRunning}>Appliquer interface</button>
+                    <button className="nav-item" onClick={() => controlCapture('start')}>Démarrer capture</button>
+                    <button className="nav-item" onClick={() => controlCapture('stop')}>Arrêter capture</button>
                 </div>
             </div>
+
+            {captureMessage && (
+                <div className="panel" style={{ marginBottom: '16px', padding: '12px 16px', color: '#94a3b8' }}>
+                    {captureMessage}
+                </div>
+            )}
 
             <div className="stats-grid">
                 <StatCard
                     label="Menaces actives"
-                    value="23"
+                    value={String(criticalCount)}
                     icon={AlertTriangle}
-                    trend="↑ +12% vs hier"
+                    trend={`Total alertes: ${overview?.total_alerts || 0}`}
                     trendDir="up"
                     variant="danger"
                 />
                 <StatCard
                     label="Flux analysés"
-                    value="1,247,832"
+                    value={String(flowsAnalyzed)}
                     icon={Activity}
-                    trend="87,234 /heure"
+                    trend={`Flows actifs: ${captureStats?.active_flows || 0}`}
                     variant=""
                 />
                 <StatCard
                     label="Anomalies détectées"
-                    value="156"
+                    value={`${Math.round((overview?.anomaly_rate || 0) * 100)}%`}
                     icon={Eye}
-                    trend="Taux: 0.012%"
+                    trend="Taux d'anomalie"
                     variant="warning"
                 />
                 <StatCard
                     label="Taux de détection"
-                    value="99.2%"
+                    value={`${Math.round(threatScore * 100)}%`}
                     icon={Shield}
-                    trend="F1-Score: 0.987"
-                    trendDir="down"
+                    trend="Threat score global"
                     variant="success"
                 />
             </div>
@@ -372,7 +453,7 @@ function DashboardOverview() {
                         <h3><Activity size={16} /> Trafic réseau (24h)</h3>
                         <span className="panel-badge">Temps réel</span>
                     </div>
-                    <TrafficChart data={DEMO_TRAFFIC} />
+                    <TrafficChart data={traffic} />
                 </div>
 
                 <div className="panel">
@@ -394,16 +475,16 @@ function DashboardOverview() {
                 <div className="panel">
                     <div className="panel-header">
                         <h3><Bell size={16} /> Alertes récentes</h3>
-                        <span className="panel-badge">{DEMO_ALERTS.length}</span>
+                        <span className="panel-badge">{alerts.length}</span>
                     </div>
-                    <AlertList alerts={DEMO_ALERTS} />
+                    <AlertList alerts={alerts} />
                 </div>
 
                 <div className="panel">
                     <div className="panel-header">
                         <h3><Clock size={16} /> Timeline</h3>
                     </div>
-                    <Timeline alerts={DEMO_ALERTS} />
+                    <Timeline alerts={alerts} />
                 </div>
             </div>
 
@@ -411,16 +492,16 @@ function DashboardOverview() {
                 <div className="panel">
                     <div className="panel-header">
                         <h3><Globe size={16} /> Carte des attaques</h3>
-                        <span className="panel-badge">{DEMO_GEO_MARKERS.length} sources</span>
+                        <span className="panel-badge">{markers.length} sources</span>
                     </div>
-                    <AttackMap markers={DEMO_GEO_MARKERS} />
+                    <AttackMap markers={markers} />
                 </div>
 
                 <div className="panel">
                     <div className="panel-header">
                         <h3><BarChart3 size={16} /> Distribution des attaques</h3>
                     </div>
-                    <AttackDistribution data={DEMO_DISTRIBUTION} />
+                    <AttackDistribution data={distribution} />
                 </div>
             </div>
         </>
@@ -431,6 +512,22 @@ function DashboardOverview() {
 // Alerts View
 // ========================================
 function AlertsView() {
+    const [alerts, setAlerts] = useState([])
+
+    useEffect(() => {
+        let mounted = true
+        const load = async () => {
+            const data = await fetchAPI('/alerts/?limit=100', [])
+            if (mounted) setAlerts(Array.isArray(data) ? data : [])
+        }
+        load()
+        const interval = setInterval(load, 5000)
+        return () => {
+            mounted = false
+            clearInterval(interval)
+        }
+    }, [])
+
     return (
         <>
             <div className="page-header">
@@ -442,9 +539,9 @@ function AlertsView() {
             <div className="panel">
                 <div className="panel-header">
                     <h3><Bell size={16} /> Toutes les alertes</h3>
-                    <span className="panel-badge">{DEMO_ALERTS.length} alertes</span>
+                    <span className="panel-badge">{alerts.length} alertes</span>
                 </div>
-                <AlertList alerts={DEMO_ALERTS} />
+                <AlertList alerts={alerts} />
             </div>
         </>
     )
@@ -454,6 +551,32 @@ function AlertsView() {
 // Traffic View
 // ========================================
 function TrafficView() {
+    const [traffic, setTraffic] = useState([])
+    const [distribution, setDistribution] = useState([])
+    const [protocols, setProtocols] = useState([])
+
+    useEffect(() => {
+        let mounted = true
+        const load = async () => {
+            const [trafficData, attackData, protocolData] = await Promise.all([
+                fetchAPI('/dashboard/traffic-timeseries', { series: [] }),
+                fetchAPI('/dashboard/attack-distribution', { distribution: [] }),
+                fetchAPI('/dashboard/protocol-distribution', { distribution: [] }),
+            ])
+
+            if (!mounted) return
+            setTraffic(trafficData?.series || [])
+            setDistribution(toPieDistribution(attackData?.distribution || []))
+            setProtocols(protocolData?.distribution || [])
+        }
+        load()
+        const interval = setInterval(load, 5000)
+        return () => {
+            mounted = false
+            clearInterval(interval)
+        }
+    }, [])
+
     return (
         <>
             <div className="page-header">
@@ -466,7 +589,7 @@ function TrafficView() {
                 <div className="panel-header">
                     <h3><Activity size={16} /> Volume de trafic (24h)</h3>
                 </div>
-                <TrafficChart data={DEMO_TRAFFIC} />
+                <TrafficChart data={traffic} />
             </div>
             <div className="dashboard-grid">
                 <div className="panel">
@@ -474,14 +597,7 @@ function TrafficView() {
                         <h3><TrendingUp size={16} /> Top protocoles</h3>
                     </div>
                     <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={[
-                            { name: 'TCP', count: 45720 },
-                            { name: 'UDP', count: 12340 },
-                            { name: 'ICMP', count: 890 },
-                            { name: 'HTTP', count: 34560 },
-                            { name: 'HTTPS', count: 67890 },
-                            { name: 'DNS', count: 8900 },
-                        ]}>
+                        <BarChart data={protocols}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="name" />
                             <YAxis />
@@ -494,7 +610,7 @@ function TrafficView() {
                     <div className="panel-header">
                         <h3><BarChart3 size={16} /> Distribution des attaques</h3>
                     </div>
-                    <AttackDistribution data={DEMO_DISTRIBUTION} />
+                    <AttackDistribution data={distribution} />
                 </div>
             </div>
         </>
@@ -505,6 +621,22 @@ function TrafficView() {
 // Map View
 // ========================================
 function MapView() {
+    const [markers, setMarkers] = useState([])
+
+    useEffect(() => {
+        let mounted = true
+        const load = async () => {
+            const data = await fetchAPI('/geo/attack-map', { markers: [] })
+            if (mounted) setMarkers(data?.markers || [])
+        }
+        load()
+        const interval = setInterval(load, 5000)
+        return () => {
+            mounted = false
+            clearInterval(interval)
+        }
+    }, [])
+
     return (
         <>
             <div className="page-header">
@@ -516,9 +648,9 @@ function MapView() {
             <div className="panel">
                 <div className="panel-header">
                     <h3><Globe size={16} /> Carte mondiale</h3>
-                    <span className="panel-badge">{DEMO_GEO_MARKERS.length} sources</span>
+                    <span className="panel-badge">{markers.length} sources</span>
                 </div>
-                <AttackMap markers={DEMO_GEO_MARKERS} />
+                <AttackMap markers={markers} />
             </div>
         </>
     )

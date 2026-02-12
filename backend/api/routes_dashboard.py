@@ -2,16 +2,17 @@
 Routes API pour le dashboard (statistiques et métriques).
 """
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
+import asyncio
 
-from backend.database.connection import get_db
-from backend.database.repository import (
-    AlertRepository, PredictionRepository,
-    AnomalyRepository, FlowRepository,
-)
+from fastapi import APIRouter, Query
+from sqlalchemy import select, func
+from typing import Dict, Any
+from datetime import datetime, timedelta
+
+from backend.database.connection import async_session_factory
+from backend.database import repository
 from backend.database.redis_client import get_threat_score, get_metric
+from backend.database.models import NetworkFlow, Alert
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -19,12 +20,17 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 @router.get("/overview")
 async def get_dashboard_overview(
     hours: int = Query(24, ge=1, le=720),
-    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Retourne les données principales du dashboard."""
-    alert_stats = await AlertRepository.get_stats(db, hours=hours)
-    anomaly_rate = await AnomalyRepository.get_anomaly_rate(db, hours=hours)
-    total_flows = await FlowRepository.count(db)
+    async with async_session_factory() as db:
+        try:
+            alert_stats = await asyncio.wait_for(repository.get_alert_stats(db, hours=hours), timeout=1.5)
+            anomaly_rate = await asyncio.wait_for(repository.get_anomaly_rate(db, hours=hours), timeout=1.5)
+            total_flows = await asyncio.wait_for(repository.count_flows(db), timeout=1.5)
+        except Exception:
+            alert_stats = {"total": 0, "by_severity": {}}
+            anomaly_rate = 0.0
+            total_flows = 0
 
     try:
         threat_score = await get_threat_score()
@@ -44,10 +50,13 @@ async def get_dashboard_overview(
 @router.get("/attack-distribution")
 async def get_attack_distribution(
     hours: int = Query(24, ge=1, le=720),
-    db: AsyncSession = Depends(get_db),
 ):
     """Distribution des types d'attaques détectées."""
-    distribution = await PredictionRepository.get_attack_distribution(db, hours=hours)
+    async with async_session_factory() as db:
+        try:
+            distribution = await asyncio.wait_for(repository.get_attack_distribution(db, hours=hours), timeout=1.5)
+        except Exception:
+            distribution = []
     return {"distribution": distribution, "period_hours": hours}
 
 
@@ -55,20 +64,26 @@ async def get_attack_distribution(
 async def get_top_threats(
     limit: int = Query(10, ge=1, le=50),
     hours: int = Query(24, ge=1, le=720),
-    db: AsyncSession = Depends(get_db),
 ):
     """Top IPs menaçantes avec détails."""
-    top_ips = await AlertRepository.get_top_ips(db, limit=limit, hours=hours)
+    async with async_session_factory() as db:
+        try:
+            top_ips = await asyncio.wait_for(repository.get_top_alert_ips(db, limit=limit, hours=hours), timeout=1.5)
+        except Exception:
+            top_ips = []
     return {"threats": top_ips, "period_hours": hours}
 
 
 @router.get("/recent-alerts")
 async def get_recent_alerts(
     limit: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
 ):
     """Alertes les plus récentes pour le feed temps réel."""
-    alerts = await AlertRepository.get_alerts(db, limit=limit)
+    async with async_session_factory() as db:
+        try:
+            alerts = await asyncio.wait_for(repository.get_alerts(db, limit=limit), timeout=1.5)
+        except Exception:
+            alerts = []
     return [
         {
             "id": str(a.id),
@@ -99,3 +114,95 @@ async def get_system_metrics():
         "flows_analyzed": flows_analyzed,
         "alerts_generated": alerts_generated,
     }
+
+
+@router.get("/traffic-timeseries")
+async def get_traffic_timeseries(
+    hours: int = Query(24, ge=1, le=720),
+):
+    """Série temporelle du trafic par heure: normal/suspicious/attacks."""
+    since = datetime.utcnow() - timedelta(hours=hours)
+    bucket = func.date_trunc("hour", NetworkFlow.timestamp)
+
+    total_q = (
+        select(bucket.label("bucket"), func.count(NetworkFlow.id).label("total"))
+        .where(NetworkFlow.timestamp >= since)
+        .group_by(bucket)
+    )
+
+    suspicious_q = (
+        select(bucket.label("bucket"), func.count(Alert.id).label("count"))
+        .join(Alert, Alert.flow_id == NetworkFlow.id)
+        .where(NetworkFlow.timestamp >= since)
+        .where(Alert.decision.in_(["suspicious", "unknown_anomaly"]))
+        .group_by(bucket)
+    )
+
+    attacks_q = (
+        select(bucket.label("bucket"), func.count(Alert.id).label("count"))
+        .join(Alert, Alert.flow_id == NetworkFlow.id)
+        .where(NetworkFlow.timestamp >= since)
+        .where(Alert.decision == "confirmed_attack")
+        .group_by(bucket)
+    )
+
+    async with async_session_factory() as db:
+        try:
+            total_rows = await asyncio.wait_for(db.execute(total_q), timeout=1.5)
+            suspicious_rows = await asyncio.wait_for(db.execute(suspicious_q), timeout=1.5)
+            attack_rows = await asyncio.wait_for(db.execute(attacks_q), timeout=1.5)
+        except Exception:
+            return {"series": [], "period_hours": hours}
+
+    totals = {row.bucket: int(row.total) for row in total_rows}
+    suspicious = {row.bucket: int(row.count) for row in suspicious_rows}
+    attacks = {row.bucket: int(row.count) for row in attack_rows}
+
+    buckets = sorted(totals.keys())
+    series = []
+    for b in buckets:
+        s = suspicious.get(b, 0)
+        a = attacks.get(b, 0)
+        normal = max(totals.get(b, 0) - s - a, 0)
+        series.append(
+            {
+                "time": b.strftime("%H:00"),
+                "normal": normal,
+                "suspicious": s,
+                "attacks": a,
+            }
+        )
+
+    return {"series": series, "period_hours": hours}
+
+
+@router.get("/protocol-distribution")
+async def get_protocol_distribution(
+    hours: int = Query(24, ge=1, le=720),
+):
+    """Distribution des protocoles réseau observés sur la période."""
+    since = datetime.utcnow() - timedelta(hours=hours)
+    async with async_session_factory() as db:
+        try:
+            rows = await asyncio.wait_for(
+                db.execute(
+                    select(NetworkFlow.protocol, func.count(NetworkFlow.id).label("count"))
+                    .where(NetworkFlow.timestamp >= since)
+                    .group_by(NetworkFlow.protocol)
+                    .order_by(func.count(NetworkFlow.id).desc())
+                ),
+                timeout=1.5,
+            )
+        except Exception:
+            return {"distribution": [], "period_hours": hours}
+
+    protocol_names = {1: "ICMP", 6: "TCP", 17: "UDP"}
+    distribution = [
+        {
+            "name": protocol_names.get(int(row.protocol), f"PROTO-{int(row.protocol)}"),
+            "count": int(row.count),
+        }
+        for row in rows
+    ]
+
+    return {"distribution": distribution, "period_hours": hours}

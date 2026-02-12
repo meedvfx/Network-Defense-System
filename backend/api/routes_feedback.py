@@ -8,7 +8,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database.connection import get_db
-from backend.database.repository import FeedbackRepository
+from backend.database import repository
 
 router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
 
@@ -28,7 +28,7 @@ async def submit_feedback(
     Soumet un feedback d'analyste sur une alerte.
     Utilisé pour l'auto-learning et le retraining.
     """
-    feedback = await FeedbackRepository.create(
+    feedback = await repository.create_feedback(
         db,
         {
             "alert_id": request.alert_id,
@@ -46,7 +46,7 @@ async def submit_feedback(
 @router.get("/stats")
 async def get_feedback_stats(db: AsyncSession = Depends(get_db)):
     """Statistiques sur les feedbacks (utilisés/non utilisés)."""
-    unused_count = await FeedbackRepository.count_unused(db)
+    unused_count = await repository.count_unused_feedback(db)
     return {
         "unused_feedback_count": unused_count,
         "ready_for_retrain": unused_count >= 100,
@@ -56,7 +56,7 @@ async def get_feedback_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/unused")
 async def get_unused_feedback(db: AsyncSession = Depends(get_db)):
     """Liste les feedbacks non encore utilisés pour l'entraînement."""
-    feedbacks = await FeedbackRepository.get_unused(db)
+    feedbacks = await repository.get_unused_feedback(db)
     return [
         {
             "id": str(f.id),

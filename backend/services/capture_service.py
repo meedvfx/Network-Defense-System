@@ -11,54 +11,82 @@ from capture.flow_builder import FlowBuilder, NetworkFlow
 logger = logging.getLogger(__name__)
 
 
-class CaptureService:
-    """Service encapsulant la capture réseau et le traitement des flux."""
+_sniffer = PacketSniffer(interface="auto", buffer_size=1000)
+_flow_builder = FlowBuilder(flow_timeout=120)
 
-    def __init__(
-        self,
-        interface: str = "eth0",
-        buffer_size: int = 1000,
-        flow_timeout: int = 120,
-    ):
-        self.sniffer = PacketSniffer(
-            interface=interface,
-            buffer_size=buffer_size,
-        )
-        self.flow_builder = FlowBuilder(flow_timeout=flow_timeout)
 
-    def start_capture(self):
-        """Démarre la capture réseau."""
-        logger.info("Démarrage de la capture réseau...")
-        self.sniffer.start()
+def configure_capture(interface: str = "auto", buffer_size: int = 1000, flow_timeout: int = 120) -> None:
+    """Configure les composants de capture (si arrêtés)."""
+    global _sniffer, _flow_builder
 
-    def stop_capture(self):
-        """Arrête la capture réseau."""
-        logger.info("Arrêt de la capture réseau...")
-        self.sniffer.stop()
+    if _sniffer.is_running:
+        return
 
-    def process_captured_packets(self) -> List[NetworkFlow]:
-        """
-        Traite les paquets capturés et retourne les flux complétés.
+    _sniffer = PacketSniffer(interface=interface, buffer_size=buffer_size)
+    _flow_builder = FlowBuilder(flow_timeout=flow_timeout)
 
-        Returns:
-            Liste de flux réseau complétés.
-        """
-        # Drainer le buffer de paquets
-        packets = self.sniffer.drain_buffer()
-        if not packets:
-            return []
 
-        # Construire les flux
-        completed_flows = self.flow_builder.process_batch(packets)
+def start_capture() -> bool:
+    """Démarre la capture réseau."""
+    logger.info("Démarrage de la capture réseau...")
+    _sniffer.start()
+    return _sniffer.is_running
 
-        return completed_flows
 
-    def get_status(self) -> Dict[str, Any]:
-        """Retourne l'état du service de capture."""
-        return {
-            "is_running": self.sniffer.is_running,
-            "packets_captured": self.sniffer.packet_count,
-            "buffer_usage": self.sniffer.buffer_usage,
-            "active_flows": self.flow_builder.active_flow_count,
-            "completed_flows": self.flow_builder.completed_flow_count,
-        }
+def start_capture_with_fallback() -> bool:
+    """Démarre la capture; si échec, bascule en interface auto."""
+    if start_capture():
+        return True
+
+    configured = _sniffer.interface
+    logger.warning(f"Échec capture sur interface '{configured}', tentative en mode auto")
+    _sniffer.interface = "auto"
+    _sniffer.start()
+    return _sniffer.is_running
+
+
+def stop_capture() -> None:
+    """Arrête la capture réseau."""
+    logger.info("Arrêt de la capture réseau...")
+    _sniffer.stop()
+
+
+def process_captured_packets() -> List[NetworkFlow]:
+    """Traite les paquets capturés et retourne les flux complétés."""
+    packets = _sniffer.drain_buffer()
+    if not packets:
+        return []
+
+    return _flow_builder.process_batch(packets)
+
+
+def force_complete_all() -> List[NetworkFlow]:
+    return _flow_builder.force_complete_all()
+
+
+def is_running() -> bool:
+    return _sniffer.is_running
+
+
+def set_interface(interface: str) -> None:
+    if _sniffer.is_running:
+        return
+    _sniffer.interface = interface
+
+
+def get_interface() -> str:
+    return _sniffer.interface
+
+
+def get_status() -> Dict[str, Any]:
+    """Retourne l'état du service de capture."""
+    return {
+        "is_running": _sniffer.is_running,
+        "interface": _sniffer.interface,
+        "packets_captured": _sniffer.packet_count,
+        "buffer_usage": _sniffer.buffer_usage,
+        "active_flows": _flow_builder.active_flow_count,
+        "completed_flows": _flow_builder.completed_flow_count,
+        "last_error": _sniffer.last_error,
+        "available_interfaces": _sniffer.available_interfaces,
+    }

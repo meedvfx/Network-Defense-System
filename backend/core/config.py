@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     anomaly_threshold_k: float = Field(default=3.0, description="Multiplicateur seuil anomalie (k × std)")
 
     # ---- Capture ----
-    capture_interface: str = Field(default="eth0", description="Interface réseau de capture")
+    capture_interface: str = Field(default="auto", description="Interface réseau de capture (auto recommandé)")
     capture_buffer_size: int = Field(default=1000, description="Taille buffer circulaire capture")
     capture_flow_timeout: int = Field(default=120, description="Timeout flux en secondes")
 
