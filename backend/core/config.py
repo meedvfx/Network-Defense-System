@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     )
     rate_limit_per_minute: int = Field(default=60, description="Limite requêtes par minute")
 
+    # ---- Data Retention ----
+    retention_enabled: bool = Field(default=True, description="Active la rétention automatique des données")
+    retention_flows_days: int = Field(default=30, description="Nombre de jours de conservation des flux")
+    retention_run_interval_minutes: int = Field(default=60, description="Intervalle d'exécution de la rétention")
+    retention_delete_batch_size: int = Field(default=5000, description="Taille de batch pour suppression")
+    retention_keep_alerted_flows: bool = Field(
+        default=True,
+        description="Conserver les flux ayant généré des alertes",
+    )
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Liste des origines CORS."""

@@ -2,6 +2,8 @@
 Routes API pour la géolocalisation des IP.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List
@@ -12,6 +14,7 @@ from backend.database import repository
 from backend.services import geo_service
 
 router = APIRouter(prefix="/api/geo", tags=["Geolocation"])
+logger = logging.getLogger(__name__)
 
 
 class GeoResponse(BaseModel):
@@ -57,7 +60,12 @@ async def get_attack_map(
     db: AsyncSession = Depends(get_db),
 ):
     """Retourne les données pour la carte des attaques."""
-    top_ips = await repository.get_top_alert_ips(db, limit=50, hours=24)
+    try:
+        top_ips = await repository.get_top_alert_ips(db, limit=50, hours=24)
+    except Exception as e:
+        logger.warning(f"Attack map indisponible (DB): {e}")
+        return {"markers": []}
+
     ips = [entry["ip"] for entry in top_ips]
 
     if not ips:
@@ -84,7 +92,12 @@ async def get_attack_map(
 @router.get("/cached")
 async def get_cached_geolocations(db: AsyncSession = Depends(get_db)):
     """Retourne toutes les géolocalisations en cache DB."""
-    geos = await repository.get_all_geolocations(db)
+    try:
+        geos = await repository.get_all_geolocations(db)
+    except Exception as e:
+        logger.warning(f"Geo cache indisponible (DB): {e}")
+        return []
+
     return [
         {
             "ip_address": g.ip_address,

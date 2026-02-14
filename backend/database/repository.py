@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
-from sqlalchemy import select, func, desc, update
+from sqlalchemy import select, func, desc, update, delete, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.models import (
@@ -245,3 +245,33 @@ async def mark_feedback_used(db: AsyncSession, feedback_ids: List[str]) -> None:
         .where(FeedbackLabel.id.in_(feedback_ids))
         .values(used_for_training=True)
     )
+
+
+async def delete_old_flows_batch(
+    db: AsyncSession,
+    older_than_days: int,
+    batch_size: int = 5000,
+    keep_alerted_flows: bool = True,
+) -> int:
+    """Supprime un batch de flux anciens avec option de préservation des flux alertés."""
+    cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+
+    ids_query = (
+        select(NetworkFlow.id)
+        .where(NetworkFlow.timestamp < cutoff)
+        .order_by(NetworkFlow.timestamp.asc())
+        .limit(batch_size)
+    )
+
+    if keep_alerted_flows:
+        alert_exists = exists(select(Alert.id).where(Alert.flow_id == NetworkFlow.id))
+        ids_query = ids_query.where(~alert_exists)
+
+    result = await db.execute(ids_query)
+    flow_ids = [row[0] for row in result.all()]
+
+    if not flow_ids:
+        return 0
+
+    delete_result = await db.execute(delete(NetworkFlow).where(NetworkFlow.id.in_(flow_ids)))
+    return delete_result.rowcount or len(flow_ids)

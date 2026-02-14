@@ -4,6 +4,7 @@ Initialise l'application, monte les routes et les middleware.
 """
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,6 +17,7 @@ from backend.core.config import get_settings
 from backend.core.security import limiter, get_cors_config
 from backend.database.connection import init_db, close_db
 from backend.database.redis_client import get_redis, close_redis
+from backend.services import data_retention_service
 
 # ---- Routes ----
 from backend.api.routes_detection import router as detection_router
@@ -62,12 +64,21 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"✓ API prête sur http://{settings.app_host}:{settings.app_port}")
     logger.info(f"✓ Swagger UI : http://{settings.app_host}:{settings.app_port}/docs")
+
+    # Scheduler de rétention
+    try:
+        if data_retention_service.start_scheduler():
+            logger.info("✓ Scheduler de rétention démarré")
+    except Exception as e:
+        logger.warning(f"✗ Scheduler de rétention indisponible : {e}")
+
     logger.info("=" * 60)
 
     yield
 
     # Cleanup
     logger.info("Arrêt du système...")
+    await data_retention_service.stop_scheduler()
     await close_db()
     await close_redis()
     logger.info("Network Defense System arrêté")
@@ -134,17 +145,23 @@ async def health_check():
         },
     }
 
-    try:
+    async def _db_check() -> None:
         from backend.database.connection import engine
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_db_check(), timeout=1.5)
         health["services"]["database"] = True
     except Exception:
         pass
 
-    try:
+    async def _redis_check() -> None:
         redis = await get_redis()
         await redis.ping()
+
+    try:
+        await asyncio.wait_for(_redis_check(), timeout=1.5)
         health["services"]["redis"] = True
     except Exception:
         pass
