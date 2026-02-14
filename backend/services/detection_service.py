@@ -11,18 +11,18 @@ from typing import Dict, Any, Optional, List
 import numpy as np
 
 from ai.inference.model_loader import ModelLoader
-from ai.inference.supervised_predictor import SupervisedPredictor
-from ai.inference.unsupervised_predictor import UnsupervisedPredictor
-from ai.inference.hybrid_decision_engine import HybridDecisionEngine
+from ai.inference import supervised_predictor
+from ai.inference import unsupervised_predictor
+from ai.inference import hybrid_decision_engine
 from capture.feature_extractor import FeatureExtractor
 from capture.flow_builder import NetworkFlow
 
 logger = logging.getLogger(__name__)
 
 _loader = ModelLoader()
-_supervised: Optional[SupervisedPredictor] = None
-_unsupervised: Optional[UnsupervisedPredictor] = None
-_decision_engine = HybridDecisionEngine()
+_supervised: Optional[Dict[str, Any]] = None
+_unsupervised: Optional[Dict[str, Any]] = None
+_decision_engine = hybrid_decision_engine.create_engine()
 _feature_extractor = FeatureExtractor()
 _is_ready = False
 
@@ -47,11 +47,11 @@ def initialize() -> bool:
         )
         return False
 
-    _supervised = SupervisedPredictor(
+    _supervised = supervised_predictor.create_predictor(
         model=_loader.supervised_model,
         class_names=_loader.pipeline.class_names,
     )
-    _unsupervised = UnsupervisedPredictor(model=_loader.unsupervised_model)
+    _unsupervised = unsupervised_predictor.create_predictor(model=_loader.unsupervised_model)
 
     _is_ready = True
     logger.info("✓ Service de détection initialisé avec succès")
@@ -96,10 +96,11 @@ def _run_inference(processed_features: np.ndarray, ip_reputation: float = 0.0) -
     if not _supervised or not _unsupervised:
         return {"error": "Prédicteurs non initialisés"}
 
-    supervised_result = _supervised.predict(processed_features)
-    unsupervised_result = _unsupervised.predict(processed_features)
+    supervised_result = supervised_predictor.predict(_supervised, processed_features)
+    unsupervised_result = unsupervised_predictor.predict(_unsupervised, processed_features)
 
-    decision = _decision_engine.decide(
+    decision = hybrid_decision_engine.decide(
+        engine=_decision_engine,
         supervised_result=supervised_result,
         unsupervised_result=unsupervised_result,
         ip_reputation=ip_reputation,

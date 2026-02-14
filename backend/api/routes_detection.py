@@ -164,6 +164,19 @@ async def _persist_flow_result(flow, result: dict) -> None:
             logger.error(f"Erreur persistance flow/result: {e}")
 
 
+async def _persist_completed_flows(flows: list) -> None:
+    if detection_service.is_ready():
+        for flow in flows:
+            result = detection_service.analyze_flow(flow)
+            if "error" in result:
+                await _persist_flow_only(flow)
+            else:
+                await _persist_flow_result(flow, result)
+    else:
+        for flow in flows:
+            await _persist_flow_only(flow)
+
+
 async def _capture_loop() -> None:
     logger.info("Boucle de capture démarrée")
     ensure_detection_ready()
@@ -182,16 +195,7 @@ async def _capture_loop() -> None:
                 await asyncio.sleep(1)
                 continue
 
-            if detection_service.is_ready():
-                for flow in completed_flows:
-                    result = detection_service.analyze_flow(flow)
-                    if "error" in result:
-                        await _persist_flow_only(flow)
-                    else:
-                        await _persist_flow_result(flow, result)
-            else:
-                for flow in completed_flows:
-                    await _persist_flow_only(flow)
+            await _persist_completed_flows(completed_flows)
         except Exception as e:
             logger.error(f"Erreur boucle capture: {e}")
 
@@ -201,16 +205,7 @@ async def _capture_loop() -> None:
     try:
         remaining = capture_service.force_complete_all()
         if remaining:
-            if detection_service.is_ready():
-                for flow in remaining:
-                    result = detection_service.analyze_flow(flow)
-                    if "error" in result:
-                        await _persist_flow_only(flow)
-                    else:
-                        await _persist_flow_result(flow, result)
-            else:
-                for flow in remaining:
-                    await _persist_flow_only(flow)
+            await _persist_completed_flows(remaining)
     except Exception as e:
         logger.error(f"Erreur flush final capture: {e}")
 

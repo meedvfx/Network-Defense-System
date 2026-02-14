@@ -65,7 +65,7 @@ class NetworkFlow:
     @property
     def is_complete(self) -> bool:
         """Un flux est considéré complet s'il a des paquets dans les deux directions."""
-        return self.total_fwd_packets > 0
+        return self.total_fwd_packets > 0 and self.total_bwd_packets > 0
 
     def to_dict(self) -> dict:
         """Convertit le flux en dictionnaire."""
