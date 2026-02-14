@@ -3,21 +3,21 @@
    ============================================ */
 
 :root {
-  /* Couleurs principales - Dark Cyber Theme */
-  --bg-primary: #0a0e17;
-  --bg-secondary: #111827;
-  --bg-card: #1a1f35;
-  --bg-card-hover: #1f2544;
-  --bg-glass: rgba(26, 31, 53, 0.85);
+  /* Couleurs principales - Light Theme */
+  --bg-primary: #f8fafc;        /* Slate-50 */
+  --bg-secondary: #ffffff;      /* White */
+  --bg-card: #ffffff;           /* White */
+  --bg-card-hover: #f1f5f9;     /* Slate-100 */
+  --bg-glass: rgba(255, 255, 255, 0.85);
 
-  /* Accents */
-  --accent-primary: #3b82f6;
-  --accent-cyan: #06b6d4;
-  --accent-purple: #8b5cf6;
-  --accent-green: #10b981;
-  --accent-orange: #f59e0b;
-  --accent-red: #ef4444;
-  --accent-pink: #ec4899;
+  /* Accents - Adjusted for Light Mode */
+  --accent-primary: #3b82f6;    /* Blue-500 */
+  --accent-cyan: #06b6d4;       /* Cyan-500 */
+  --accent-purple: #8b5cf6;     /* Violet-500 */
+  --accent-green: #10b981;      /* Emerald-500 */
+  --accent-orange: #f59e0b;     /* Amber-500 */
+  --accent-red: #ef4444;        /* Red-500 */
+  --accent-pink: #ec4899;       /* Pink-500 */
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, #3b82f6, #8b5cf6);
@@ -26,18 +26,18 @@
   --gradient-warning: linear-gradient(135deg, #f59e0b, #f97316);
   --gradient-card: linear-gradient(180deg, rgba(59,130,246,0.05), transparent);
 
-  /* Texte */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  /* Texte - Dark on Light */
+  --text-primary: #0f172a;      /* Slate-900 */
+  --text-secondary: #475569;    /* Slate-600 */
+  --text-muted: #94a3b8;        /* Slate-400 */
 
   /* Bordures */
-  --border-color: rgba(59, 130, 246, 0.15);
-  --border-glow: rgba(59, 130, 246, 0.3);
+  --border-color: #e2e8f0;      /* Slate-200 */
+  --border-glow: rgba(59, 130, 246, 0.4);
 
   /* Shadows */
-  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
-  --shadow-glow: 0 0 30px rgba(59, 130, 246, 0.1);
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-glow: 0 0 15px rgba(59, 130, 246, 0.15);
 
   /* Typography */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

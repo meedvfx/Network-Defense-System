@@ -143,8 +143,9 @@ function TrafficChart({ data }) {
                 <XAxis dataKey="time" />
                 <YAxis />
                 <Tooltip
-                    contentStyle={{ background: '#1a1f35', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '10px', fontSize: '12px' }}
-                    labelStyle={{ color: '#94a3b8' }}
+                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', fontSize: '12px', color: 'var(--text-primary)' }}
+                    labelStyle={{ color: 'var(--text-secondary)' }}
+                    itemStyle={{ color: 'var(--text-primary)' }}
                 />
                 <Area type="monotone" dataKey="normal" stroke="#3b82f6" fill="url(#gradNormal)" strokeWidth={2} name="Normal" />
                 <Area type="monotone" dataKey="suspicious" stroke="#f59e0b" fill="transparent" strokeWidth={2} strokeDasharray="5 5" name="Suspicious" />
@@ -174,7 +175,8 @@ function AttackDistribution({ data }) {
                     ))}
                 </Pie>
                 <Tooltip
-                    contentStyle={{ background: '#1a1f35', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '10px', fontSize: '12px' }}
+                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', fontSize: '12px' }}
+                    itemStyle={{ color: 'var(--text-primary)' }}
                 />
                 <Legend
                     verticalAlign="bottom"
@@ -191,7 +193,7 @@ function AttackDistribution({ data }) {
 // ========================================
 function AttackMap({ markers }) {
     return (
-        <div className="map-container" style={{ position: 'relative', background: '#0d1117' }}>
+        <div className="map-container" style={{ position: 'relative', background: 'var(--bg-card)' }}>
             <div style={{
                 position: 'absolute', inset: 0,
                 display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
@@ -203,7 +205,7 @@ function AttackMap({ markers }) {
                     <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '4px' }}>
                         Carte des Attaques Mondiales
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                         {markers.length} sources détectées • Leaflet s'activera avec npm install
                     </div>
                 </div>
@@ -214,8 +216,8 @@ function AttackMap({ markers }) {
                             borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px'
                         }}>
                             <Target size={12} color="#ef4444" />
-                            <span style={{ color: '#f1f5f9', fontWeight: 500 }}>{m.ip}</span>
-                            <span style={{ color: '#64748b' }}>— {m.city}, {m.country}</span>
+                            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{m.ip}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>— {m.city}, {m.country}</span>
                             <span style={{ color: '#ef4444', fontWeight: 600 }}>({m.alert_count})</span>
                         </div>
                     ))}
@@ -365,6 +367,7 @@ function DashboardOverview() {
         }
     }
 
+
     const applyInterface = async () => {
         const response = await fetchAPI('/detection/capture/interface', null, {
             method: 'POST',
@@ -410,7 +413,7 @@ function DashboardOverview() {
             </div>
 
             {captureMessage && (
-                <div className="panel" style={{ marginBottom: '16px', padding: '12px 16px', color: '#94a3b8' }}>
+                <div className="panel" style={{ marginBottom: '16px', padding: '12px 16px', color: 'var(--text-secondary)' }}>
                     {captureMessage}
                 </div>
             )}
@@ -462,7 +465,7 @@ function DashboardOverview() {
                     </div>
                     <ThreatScoreRing score={threatScore} />
                     <div style={{ textAlign: 'center', marginTop: '8px' }}>
-                        <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                             {threatScore >= 0.7 ? '⚠️ Niveau élevé - Investigation requise' :
                                 threatScore >= 0.4 ? '🔵 Niveau modéré - Surveillance renforcée' :
                                     '✅ Niveau normal - Aucune action requise'}
@@ -601,7 +604,11 @@ function TrafficView() {
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="name" />
                             <YAxis />
-                            <Tooltip contentStyle={{ background: '#1a1f35', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '10px' }} />
+                            <Tooltip
+                                contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px' }}
+                                itemStyle={{ color: 'var(--text-primary)' }}
+                                labelStyle={{ color: 'var(--text-secondary)' }}
+                            />
                             <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
@@ -678,13 +685,13 @@ function ModelsView() {
                     <div className="panel-header">
                         <h3><Zap size={16} /> Architecture supervisée</h3>
                     </div>
-                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: '#94a3b8' }}>
-                        <strong style={{ color: '#f1f5f9' }}>MLP (Multi-Layer Perceptron)</strong><br />
+                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: 'var(--text-secondary)' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>MLP (Multi-Layer Perceptron)</strong><br />
                         • Input → Dense(256, ReLU) → BN → Dropout(0.3)<br />
                         • → Dense(128, ReLU) → BN → Dropout(0.3)<br />
                         • → Dense(64, ReLU) → BN → Dropout(0.2)<br />
                         • → Dense(n_classes, Softmax)<br /><br />
-                        <strong style={{ color: '#f1f5f9' }}>Métriques (v1.0.0)</strong><br />
+                        <strong style={{ color: 'var(--text-primary)' }}>Métriques (v1.0.0)</strong><br />
                         • Classes: DDoS, PortScan, BruteForce, DoS, Botnet, Web Attack, BENIGN<br />
                         • F1-Score moyen: 0.987<br />
                         • Entraîné sur CIC-IDS2017 + CIC-IDS2018
@@ -694,12 +701,12 @@ function ModelsView() {
                     <div className="panel-header">
                         <h3><Eye size={16} /> Autoencoder non-supervisé</h3>
                     </div>
-                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: '#94a3b8' }}>
-                        <strong style={{ color: '#f1f5f9' }}>Dense Autoencoder</strong><br />
+                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: 'var(--text-secondary)' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>Dense Autoencoder</strong><br />
                         • Encoder: Input → 64 → 32 → 16 → 8 (latent)<br />
                         • Decoder: 8 → 16 → 32 → 64 → Output<br />
                         • Loss: MSE (Mean Squared Error)<br /><br />
-                        <strong style={{ color: '#f1f5f9' }}>Détection d'anomalies</strong><br />
+                        <strong style={{ color: 'var(--text-primary)' }}>Détection d'anomalies</strong><br />
                         • Seuil dynamique: μ + 3σ<br />
                         • Calibré sur le percentile 99<br />
                         • Détecte les attaques 0-day et comportements déviants
