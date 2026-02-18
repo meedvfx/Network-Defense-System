@@ -13,7 +13,10 @@ router = APIRouter(prefix="/api/models", tags=["Models"])
 
 @router.get("/status")
 async def get_models_status() -> Dict[str, Any]:
-    """Retourne le statut de tous les artifacts AI."""
+    """
+    Vérifie la présence et l'intégrité des fichiers modèles (artifacts).
+    Retourne l'état de chaque composant (scaler, encoder, modèles Keras).
+    """
     return {
         "artifacts_dir": str(artifact_paths.base_dir),
         "all_artifacts_present": artifact_paths.all_exist(),
@@ -30,7 +33,10 @@ async def get_models_status() -> Dict[str, Any]:
 
 @router.get("/config")
 async def get_inference_config() -> Dict[str, Any]:
-    """Retourne la configuration d'inférence actuelle."""
+    """
+    Expose la configuration d'inférence chargée en mémoire.
+    Permet au frontend d'afficher les seuils et pondérations utilisés par l'IA.
+    """
     return {
         "anomaly_threshold_k": inference_config.anomaly_threshold_k,
         "min_classification_confidence": inference_config.min_classification_confidence,

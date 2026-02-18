@@ -12,10 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 class NetworkFlow:
-    """Représente un flux réseau (session bidirectionnelle)."""
+    """
+    Représente un flux réseau (session bidirectionnelle) identifié par son 5-tuple.
+    Stocke les métadonnées et un résumé des paquets échangés (forward/backward).
+    """
 
     def __init__(self, flow_key: tuple, first_packet: dict):
         self.flow_key = flow_key
+        # Métadonnées basées sur le premier paquet
         self.src_ip = first_packet["src_ip"]
         self.dst_ip = first_packet["dst_ip"]
         self.src_port = first_packet["src_port"]
@@ -25,15 +29,18 @@ class NetworkFlow:
         self.start_time = first_packet["timestamp"]
         self.last_time = first_packet["timestamp"]
 
-        # Compteurs
+        # Listes de paquets bruts (limitées en taille par l'usage mémoire si nécessaire)
         self.fwd_packets: List[dict] = []
         self.bwd_packets: List[dict] = []
 
-        # Ajouter le premier paquet
+        # Ajouter le premier paquet explicitement
         self._add_packet(first_packet)
 
     def _add_packet(self, packet: dict):
-        """Ajoute un paquet au flux (forward ou backward)."""
+        """
+        Ajoute un paquet au flux en déterminant sa direction (Forward/Backward).
+        Met à jour le timestamp de dernière activité.
+        """
         if packet["src_ip"] == self.src_ip:
             self.fwd_packets.append(packet)
         else:
@@ -42,12 +49,12 @@ class NetworkFlow:
         self.last_time = max(self.last_time, packet["timestamp"])
 
     def add_packet(self, packet: dict):
-        """Ajoute un paquet et met à jour les timestamps."""
+        """Interface publique pour ajouter un paquet."""
         self._add_packet(packet)
 
     @property
     def duration(self) -> float:
-        """Durée du flux en secondes."""
+        """Durée active du flux en secondes (fin - début)."""
         return max(0.0, self.last_time - self.start_time)
 
     @property
@@ -64,11 +71,14 @@ class NetworkFlow:
 
     @property
     def is_complete(self) -> bool:
-        """Un flux est considéré complet s'il a des paquets dans les deux directions."""
+        """
+        Vérifie si le flux a vu du trafic dans les deux sens.
+        Utile pour ignorer les scans SYN sans réponse ou le trafic unidirectionnel (UDP spoofé).
+        """
         return self.total_fwd_packets > 0 and self.total_bwd_packets > 0
 
     def to_dict(self) -> dict:
-        """Convertit le flux en dictionnaire."""
+        """Sérialise le flux pour le stockage ou l'analyse."""
         return {
             "src_ip": self.src_ip,
             "dst_ip": self.dst_ip,
@@ -87,16 +97,15 @@ class NetworkFlow:
 
 class FlowBuilder:
     """
-    Agrège les paquets capturés en flux réseau (5-tuple + timeout).
-
-    Un flux est identifié par : (src_ip, dst_ip, src_port, dst_port, protocol)
-    Les paquets de la direction inverse sont regroupés dans le même flux.
+    Agrégateur de paquets en flux réseau.
+    Groupe les paquets par 5-tuple (SrcIP, DstIP, SrcPort, DstPort, Proto).
+    Gère l'expiration des flux inactifs (timeout).
     """
 
     def __init__(self, flow_timeout: int = 120):
         """
         Args:
-            flow_timeout: Timeout d'inactivité d'un flux en secondes.
+            flow_timeout: Temps (sec) après lequel un flux inactif est considéré clos.
         """
         self.flow_timeout = flow_timeout
         self.active_flows: Dict[tuple, NetworkFlow] = {}
@@ -104,14 +113,14 @@ class FlowBuilder:
 
     def _get_flow_key(self, packet: dict) -> tuple:
         """
-        Génère la clé de flux bidirectionnelle.
-        Trie src/dst pour que les deux directions mappent au même flux.
+        Génère une clé unique pour le flux, indépendamment de la direction.
+        Trie les IP/Port pour que A->B et B->A aient la même clé.
         """
         src = (packet["src_ip"], packet["src_port"])
         dst = (packet["dst_ip"], packet["dst_port"])
         proto = packet["protocol"]
 
-        # Normaliser : le plus petit IP en premier
+        # Normalisation canonique : Tuple le plus petit en premier
         if src < dst:
             return (src[0], dst[0], src[1], dst[1], proto)
         else:
@@ -119,13 +128,8 @@ class FlowBuilder:
 
     def process_packet(self, packet: dict) -> Optional[NetworkFlow]:
         """
-        Traite un paquet et l'ajoute au flux correspondant.
-
-        Args:
-            packet: Dictionnaire de métadonnées du paquet.
-
-        Returns:
-            NetworkFlow complété si le timeout est dépassé, None sinon.
+        Intègre un nouveau paquet. Crée un nouveau flux ou met à jour l'existant.
+        Note: Ne retourne pas le flux immédiatement, l'analyse se fait par batch ou timeout.
         """
         flow_key = self._get_flow_key(packet)
 
@@ -140,23 +144,18 @@ class FlowBuilder:
 
     def process_batch(self, packets: List[dict]) -> List[NetworkFlow]:
         """
-        Traite un batch de paquets et retourne les flux complétés.
-
-        Args:
-            packets: Liste de paquets.
-
-        Returns:
-            Liste de flux complétés (timeout dépassé).
+        Traite une liste de paquets et retourne les flux qui viennent d'expirer.
+        C'est la méthode principale appelée par le service de capture.
         """
         for packet in packets:
             self.process_packet(packet)
 
-        # Vérifier les timeouts
+        # Vérification et extraction des flux terminés (timeout)
         completed = self.check_timeouts()
         return completed
 
     def check_timeouts(self) -> List[NetworkFlow]:
-        """Vérifie et retourne les flux qui ont dépassé le timeout."""
+        """Scanne les flux actifs pour détecter ceux qui ont dépassé le timeout d'inactivité."""
         current_time = time.time()
         completed = []
         expired_keys = []
@@ -166,6 +165,7 @@ class FlowBuilder:
                 completed.append(flow)
                 expired_keys.append(key)
 
+        # Nettoyage dict
         for key in expired_keys:
             del self.active_flows[key]
 
@@ -176,7 +176,10 @@ class FlowBuilder:
         return completed
 
     def force_complete_all(self) -> List[NetworkFlow]:
-        """Force la complétion de tous les flux actifs."""
+        """
+        Force la fermeture de tous les flux actifs (ex: arrêt du service).
+        Renvoie tout ce qui reste en mémoire.
+        """
         completed = list(self.active_flows.values())
         self._completed_flows.extend(completed)
         self.active_flows.clear()

@@ -13,14 +13,15 @@
 ## 📋 Table des matières
 
 - [Aperçu](#-aperçu)
+- [Problème & Solution](docs/PROBLEM_STATEMENT.md) 🆕
 - [Architecture](#-architecture)
 - [Fonctionnalités](#-fonctionnalités)
 - [Stack technique](#-stack-technique)
 - [Structure du projet](#-structure-du-projet)
 - [Installation](#-installation)
-- [Utilisation](#-utilisation)
+- [Guide Utilisateur](docs/USER_GUIDE.md) 🆕
 - [Pipeline AI](#-pipeline-ai)
-- [Entraînement des modèles](#-entraînement-des-modèles)
+- [Entraînement des modèles](docs/TRAINING_GUIDE.md)
 - [API Documentation](#-api-documentation)
 - [Configuration](#-configuration)
 
@@ -99,13 +100,13 @@ Le **Network Defense System (NDS)** est une plateforme SOC (Security Operations 
 
 | Module | Description |
 |--------|-------------|
-| 🧠 **AI Supervisé** | Modèle Keras pré-entraîné (MLP/CNN-1D) pour classifier 7+ types d'attaques |
-| 🔮 **AI Non-supervisé** | Autoencoder avec seuil adaptatif (μ + kσ) pour détecter les attaques 0-day |
-| ⚖️ **Moteur Hybride** | Fusion pondérée (50/30/20) classification + anomalie + réputation IP |
-| 📡 **Capture Réseau** | Scapy en thread séparé avec buffer circulaire et ~78 features CIC |
-| 🌍 **Géolocalisation** | ip-api.com avec cache local et carte des attaques |
-| 📊 **Dashboard** | React + Recharts avec threat score animé, timeline, alertes temps réel |
-| 🔧 **Production-Ready** | Modèles figés, inférence optimisée, warm-up au démarrage |
+| 🧠 **AI Supervisé** | Modèle Keras pré-entraîné (MLP/CNN-1D) pour classifier 7+ types d'attaques. |
+| 🔮 **AI Non-supervisé** | Autoencoder avec seuil adaptatif (μ + kσ) pour détecter les anomalies (Zero-day). |
+| ⚖️ **Moteur Hybride** | Fusion pondérée (Classes + Anomalie + Réputation IP) pour une décision de sécurité robuste. |
+| 📡 **Capture Réseau** | Moteur Scapy en thread séparé, reconstruction de flux (Flow Builder) et extraction ~78 features. |
+| 🌍 **Géolocalisation** | Enrichissement via ip-api.com avec mise en cache Redis pour la carte des menaces. |
+| 📊 **Dashboard** | Interface React temps réel (WebSocket) : Threat Score, Alertes, Carte, Métriques système. |
+| 🔧 **Production-Ready** | Architecture assynchrone (FastAPI + Celery-like tasks), Logging centralisé, Monitoring. |
 
 ---
 
@@ -226,29 +227,37 @@ cp .env.example .env
 
 ### 3. Démarrer les services (optionnel)
 
+Pour une stack complète avec base de données et cache :
+
 ```bash
-docker-compose up -d   # PostgreSQL + Redis
+docker-compose up -d   # Lance PostgreSQL et Redis
 ```
 
-> Sans Docker, le backend fonctionne mais affiche des warnings.
+> **Note :** Sans Docker, vous devez avoir PostgreSQL et Redis installés localement et mettre à jour le `.env`.
 
 ### 4. Installer les dépendances Python
 
 ```bash
+# Création de l'environnement virtuel
 python -m venv venv
+
+# Activation
 # Windows
 .\venv\Scripts\activate
 # Linux/Mac
 source venv/bin/activate
 
+# Installation des paquets
 pip install -r requirements.txt
 ```
 
-### 5. Installer le dashboard
+### 5. Installer le dashboard (Frontend)
 
 ```bash
 cd dashboard
 npm install
+# Pour construire la version production :
+# npm run build
 cd ..
 ```
 

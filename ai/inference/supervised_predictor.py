@@ -19,6 +19,16 @@ _BENIGN_LABELS = {"BENIGN", "NORMAL", "LEGITIMATE"}
 
 
 def create_predictor(model, class_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Crée une instance de prédicteur supervisé encapsulant le modèle et sa configuration.
+
+    Args:
+        model: Le modèle Keras chargé.
+        class_names: Liste des noms de classes correspondant aux sorties du modèle.
+
+    Returns:
+        Dictionnaire contenant le modèle et ses paramètres de configuration.
+    """
     return {
         "model": model,
         "class_names": class_names or [],
@@ -27,27 +37,46 @@ def create_predictor(model, class_names: Optional[List[str]] = None) -> Dict[str
 
 
 def _is_benign_label(label: str) -> bool:
+    """Vérifie si une étiquette donnée correspond à un trafic normal."""
     return label.upper() in _BENIGN_LABELS
 
 
 def _to_2d(features: np.ndarray) -> np.ndarray:
+    """Assure que les features sont au format 2D (batch, features)."""
     if features.ndim == 1:
         return features.reshape(1, -1)
     return features
 
 
 def _resolve_class_name(class_names: List[str], predicted_index: int) -> str:
+    """Récupère le nom de la classe à partir de son index, avec gestion d'erreur."""
     if class_names and predicted_index < len(class_names):
         return class_names[predicted_index]
     return f"class_{predicted_index}"
 
 
 def predict(predictor: Dict[str, Any], features: np.ndarray) -> Dict[str, Any]:
+    """
+    Effectue une prédiction sur un vecteur de features unique.
+
+    Args:
+        predictor: L'instance du prédicteur créée par create_predictor.
+        features: Le vecteur de features à analyser.
+
+    Returns:
+        Dictionnaire contenant :
+        - attack_type : Nom de la classe prédite.
+        - probability : Confiance de la prédiction (0-1).
+        - is_attack : Booléen indiquant si c'est une attaque confirmée.
+        - is_confident : Si la confiance dépasse le seuil minimal.
+        - class_probabilities : Détail des probabilités pour toutes les classes.
+    """
     features = _to_2d(features)
     model = predictor["model"]
     class_names = predictor["class_names"]
     min_confidence = predictor["min_confidence"]
 
+    # Inférence rapide (verbose=0 pour éviter le spam logs)
     probabilities = model.predict(features, verbose=0)
     probs = probabilities[0] if probabilities.ndim > 1 else probabilities
 
@@ -55,12 +84,17 @@ def predict(predictor: Dict[str, Any], features: np.ndarray) -> Dict[str, Any]:
     confidence = float(probs[predicted_index])
     attack_type = _resolve_class_name(class_names, predicted_index)
 
+    # Création du dictionnaire détaillé des probabilités
     class_probabilities = {
         _resolve_class_name(class_names, i): round(float(prob), 6)
         for i, prob in enumerate(probs)
     }
 
     is_benign = _is_benign_label(attack_type)
+    
+    # Une prédiction est considérée comme une attaque seulement si :
+    # 1. Ce n'est pas "BENIGN"
+    # 2. La confiance est suffisante (évite les faux positifs sur les cas limites)
     is_confident = confidence >= min_confidence
 
     return {
@@ -74,6 +108,16 @@ def predict(predictor: Dict[str, Any], features: np.ndarray) -> Dict[str, Any]:
 
 
 def predict_batch(predictor: Dict[str, Any], features: np.ndarray) -> List[Dict[str, Any]]:
+    """
+    Effectue des prédictions sur un lot (batch) de features.
+    Optimisé pour traiter plusieurs flux simultanément.
+
+    Args:
+        features: Array 2D (n_samples, n_features).
+
+    Returns:
+        Liste de dictionnaires de résultats.
+    """
     features = _to_2d(features)
     model = predictor["model"]
     class_names = predictor["class_names"]

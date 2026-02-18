@@ -20,12 +20,15 @@ logger = logging.getLogger(__name__)
 
 class FeaturePipeline:
     """
-    Pipeline de prétraitement des features pour l'inférence.
-    Charge le scaler et le feature_selector depuis les artifacts pré-entraînés
-    et les applique dans l'ordre correct.
+    Gère le pipeline complet de prétraitement des fonctionnalités pour l'inférence en production.
+    Cette classe est responsable de charger les artefacts de prétraitement (scaler, sélecteur)
+    et de les appliquer séquentiellement aux données brutes pour les préparer à être consommées par les modèles d'IA.
+    
+    Elle assure la cohérence entre les transformations appliquées lors de l'entraînement et celles appliquées en production.
     """
 
     def __init__(self):
+        """Initialise le pipeline avec des composants vides."""
         self.scaler = None
         self.feature_selector = None
         self.encoder = None
@@ -37,13 +40,15 @@ class FeaturePipeline:
 
     def load(self) -> bool:
         """
-        Charge les objets de preprocessing depuis les artifacts.
+        Charge les objets de prétraitement (scaler, sélecteur, encodeur) depuis les fichiers artefacts sur le disque.
+        Cette méthode doit être appelée avant toute tentative de transformation.
 
         Returns:
-            True si tous les artifacts sont chargés avec succès.
+            bool: True si tous les artefacts essentiels ont été chargés avec succès, False sinon.
         """
         try:
-            # Charger le scaler
+            # 1. Charger le Scaler (StandardScaler)
+            # Indispensable pour normaliser les données (moyenne=0, écart-type=1).
             scaler_path = artifact_paths.scaler
             if scaler_path.exists():
                 self.scaler = joblib.load(str(scaler_path))
@@ -52,7 +57,8 @@ class FeaturePipeline:
                 logger.error(f"✗ Scaler introuvable : {scaler_path}")
                 return False
 
-            # Charger le feature selector
+            # 2. Charger le Feature Selector (Optionnel mais recommandé)
+            # Réduit la dimensionnalité en ne gardant que les fonctionnalités les plus pertinentes.
             selector_path = artifact_paths.feature_selector
             if selector_path.exists():
                 self.feature_selector = joblib.load(str(selector_path))
@@ -60,11 +66,12 @@ class FeaturePipeline:
             else:
                 logger.warning(f"⚠ Feature selector introuvable : {selector_path} (optionnel)")
 
-            # Charger l'encoder (pour le mapping label → nom d'attaque)
+            # 3. Charger l'Encoder (LabelEncoder)
+            # Permet de mapper les prédictions numériques (0, 1, 2...) vers des noms d'attaques lisibles (DDoS, Botnet...).
             encoder_path = artifact_paths.encoder
             if encoder_path.exists():
                 self.encoder = joblib.load(str(encoder_path))
-                # Extraire les noms de classes
+                # Extraire les noms de classes pour un accès rapide
                 if hasattr(self.encoder, 'classes_'):
                     self._class_names = list(self.encoder.classes_)
                 elif hasattr(self.encoder, 'class_names'):
@@ -75,7 +82,8 @@ class FeaturePipeline:
             else:
                 logger.warning(f"⚠ Encoder introuvable : {encoder_path} (optionnel)")
 
-            # Détecter les dimensions
+            # 4. Déduire les dimensions d'entrée et de sortie attendues
+            # Utile pour le débogage et la validation.
             if hasattr(self.scaler, 'n_features_in_'):
                 self._n_features_in = self.scaler.n_features_in_
             if self.feature_selector and hasattr(self.feature_selector, 'n_features_'):
@@ -86,60 +94,76 @@ class FeaturePipeline:
             self._is_loaded = True
             logger.info(
                 f"✓ Pipeline de preprocessing chargé "
-                f"(in={self._n_features_in}, out={self._n_features_out})"
+                f"(entrée={self._n_features_in}, sortie={self._n_features_out})"
             )
             return True
 
         except Exception as e:
-            logger.error(f"✗ Erreur de chargement du pipeline : {e}")
+            logger.error(f"✗ Erreur critique lors du chargement du pipeline : {e}")
             self._is_loaded = False
             return False
 
     @property
     def is_loaded(self) -> bool:
+        """Indique si le pipeline est prêt à être utilisé."""
         return self._is_loaded
 
     @property
     def class_names(self) -> Optional[List[str]]:
+        """Retourne la liste des noms des classes d'attaques connues."""
         return self._class_names
 
     @property
     def num_classes(self) -> int:
+        """Retourne le nombre total de classes d'attaques."""
         return len(self._class_names) if self._class_names else 0
 
     def transform(self, features: np.ndarray) -> np.ndarray:
         """
-        Applique le pipeline complet de preprocessing.
+        Applique la chaîne complète de transformations aux données brutes.
+        
+        Séquence :
+        1. Validation stricte (nettoyage NaN/Inf)
+        2. Sélection de fonctionnalités (si activée)
+        3. Mise à l'échelle (Scaling)
 
         Args:
-            features: Features brutes (1D ou 2D array).
+            features (np.ndarray): Tableau de features brutes (1D ou 2D).
 
         Returns:
-            Features transformées prêtes pour l'inférence.
+            np.ndarray: Le tableau transformé, prêt pour l'inférence par le modèle.
 
         Raises:
-            DataValidationError: Si les features sont invalides.
             RuntimeError: Si le pipeline n'est pas chargé.
+            DataValidationError: Si les données sont invalides.
         """
         if not self._is_loaded:
             raise RuntimeError("Pipeline non chargé. Appelez load() avant transform().")
 
-        # 1. Validation et nettoyage
+        # 1. Validation et nettoyage des données brutes
         cleaned = self.validator.validate_strict(features)
 
-        # 2. Feature selection (si disponible, appliqué AVANT le scaling)
+        # 2. Application du Feature Selector (si disponible)
+        # Note: Doit être appliqué AVANT le scaler si c'est ainsi qu'il a été entraîné.
+        # Vérifiez l'ordre dans votre pipeline d'entraînement (généralement select -> scale ou scale -> select).
+        # Ici on suppose select -> scale ou scale -> select selon la logique d'entraînement.
+        # UPDATE: Pour la plupart des cas, StandardScaler doit être appliqué sur les features SÉLECTIONNÉES
+        # OU BIEN FeatureSelector sélectionne sur des features SCALÉES.
+        # Ici on applique SelectKBest sur les features brutes (nettoyées) puis on scale.
         if self.feature_selector is not None:
             try:
                 cleaned = self.feature_selector.transform(cleaned)
             except Exception as e:
-                logger.warning(f"Feature selection échouée, features brutes utilisées : {e}")
+                # Fallback : si la selection échoue (ex: dimension mismatch), on loggue et on continue (risqué)
+                logger.warning(f"Feature selection échouée, utilisation des features brutes : {e}")
 
-        # 3. Scaling
+        # 3. Application du Scaler (Normalisation)
         try:
             transformed = self.scaler.transform(cleaned)
         except Exception as e:
-            raise RuntimeError(f"Erreur de scaling : {e}")
+            raise RuntimeError(f"Erreur de scaling : {e}. Vérifiez que le nombre de features correspond à l'entraînement.")
 
+        # Conversion explicite en float32 pour optimiser l'inférence TensorFlow
         return transformed.astype(np.float32)
 
     def decode_label(self, label_index: int) -> str:

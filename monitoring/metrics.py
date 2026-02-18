@@ -12,10 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class SystemMetrics:
-    """Collecte les métriques système et applicatives."""
+    """
+    Collecteur centralisé de métriques pour le monitoring interne.
+    Agrège les compteurs applicatifs (paquets, alertes) et l'état système (CPU, RAM).
+    Singleton utilisé par le dashboard pour l'affichage temps réel.
+    """
 
     def __init__(self):
         self._start_time = time.time()
+        # Compteurs monotones croissants
         self.counters: Dict[str, int] = {
             "packets_processed": 0,
             "flows_analyzed": 0,
@@ -23,6 +28,7 @@ class SystemMetrics:
             "predictions_made": 0,
             "anomalies_detected": 0,
         }
+        # Gauges (valeurs qui montent et descendent)
         self.gauges: Dict[str, float] = {
             "current_threat_score": 0.0,
             "active_flows": 0,
@@ -30,18 +36,21 @@ class SystemMetrics:
         }
 
     def increment(self, counter: str, value: int = 1):
-        """Incrémente un compteur."""
+        """Incrémente un compteur nommé de manière thread-safe (en Python, GIL aide)."""
         if counter in self.counters:
             self.counters[counter] += value
 
     def set_gauge(self, gauge: str, value: float):
-        """Met à jour un gauge."""
+        """Met à jour la valeur instantanée d'une jauge."""
         self.gauges[gauge] = value
 
     def get_system_health(self) -> Dict[str, Any]:
-        """Collecte les métriques système (CPU, mémoire, disque)."""
+        """
+        Capture l'état des ressources du serveur hôte via psutil.
+        Retourne CPU, RAM, Disque et Uptime.
+        """
         return {
-            "cpu_percent": psutil.cpu_percent(interval=0.1),
+            "cpu_percent": psutil.cpu_percent(interval=None), # Non-bloquant
             "memory": {
                 "total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
                 "used_gb": round(psutil.virtual_memory().used / (1024**3), 2),
@@ -55,7 +64,7 @@ class SystemMetrics:
         }
 
     def get_all_metrics(self) -> Dict[str, Any]:
-        """Retourne toutes les métriques."""
+        """Retourne un snapshot complet de toutes les métriques."""
         return {
             "counters": self.counters.copy(),
             "gauges": self.gauges.copy(),

@@ -14,8 +14,9 @@ router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
 
 
 class FeedbackRequest(BaseModel):
+    """Modèle pour soumettre un feedback."""
     alert_id: str
-    analyst_label: str
+    analyst_label: str # ex: 'benign', 'malicious', 'ddos'
     notes: Optional[str] = None
 
 
@@ -25,8 +26,8 @@ async def submit_feedback(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Soumet un feedback d'analyste sur une alerte.
-    Utilisé pour l'auto-learning et le retraining.
+    Enregistre le feedback d'un expert sur une alerte spécifique.
+    Ces données constituent le "Ground Truth" pour le ré-entraînement futur des modèles.
     """
     feedback = await repository.create_feedback(
         db,
@@ -45,17 +46,23 @@ async def submit_feedback(
 
 @router.get("/stats")
 async def get_feedback_stats(db: AsyncSession = Depends(get_db)):
-    """Statistiques sur les feedbacks (utilisés/non utilisés)."""
+    """
+    Retourne des métriques sur la boucle de feedback.
+    Permet de savoir si assez de données sont disponibles pour lancer un entraînement.
+    """
     unused_count = await repository.count_unused_feedback(db)
     return {
         "unused_feedback_count": unused_count,
-        "ready_for_retrain": unused_count >= 100,
+        "ready_for_retrain": unused_count >= 100, # Seuil arbitraire pour déclencher un batch
     }
 
 
 @router.get("/unused")
 async def get_unused_feedback(db: AsyncSession = Depends(get_db)):
-    """Liste les feedbacks non encore utilisés pour l'entraînement."""
+    """
+    Récupère la liste des labels validés non encore utilisés par le modèle.
+    C'est cette liste qui sera consommée par le pipeline d'entraînement offline.
+    """
     feedbacks = await repository.get_unused_feedback(db)
     return [
         {

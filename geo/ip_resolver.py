@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Plages IP privées et réservées
+# Plages IP privées (RFC 1918) et réservées (RFC 5735)
 PRIVATE_RANGES = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
@@ -17,25 +17,29 @@ PRIVATE_RANGES = [
 ]
 
 RESERVED_RANGES = [
-    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
-    ipaddress.ip_network("169.254.0.0/16"),    # Link-local
+    ipaddress.ip_network("127.0.0.0/8"),      # Loopback (Localhost)
+    ipaddress.ip_network("169.254.0.0/16"),    # Link-local (APIPA)
     ipaddress.ip_network("224.0.0.0/4"),       # Multicast
-    ipaddress.ip_network("240.0.0.0/4"),       # Reserved
-    ipaddress.ip_network("0.0.0.0/8"),         # Current network
+    ipaddress.ip_network("240.0.0.0/4"),       # Réservé (Future Use)
+    ipaddress.ip_network("0.0.0.0/8"),         # Réseau courant
     ipaddress.ip_network("255.255.255.255/32"),# Broadcast
 ]
 
 
 def is_public_ip(ip: str) -> bool:
-    """Vérifie si une IP est publique (géolocalisable)."""
+    """
+    Détermine si une adresse IP est publique et routable sur Internet.
+    Exclut les IPs privées (LAN), réservées, loopback et link-local.
+    Utile pour éviter d'envoyer des IPs locales aux services de géolocalisation.
+    """
     try:
         addr = ipaddress.ip_address(ip)
 
-        # IPv6 check
+        # Vérification IPv6
         if addr.version == 6:
             return not addr.is_private and not addr.is_loopback
 
-        # IPv4 checks
+        #  Vérification IPv4 (Privé + Réservé)
         for network in PRIVATE_RANGES + RESERVED_RANGES:
             if addr in network:
                 return False
@@ -46,7 +50,7 @@ def is_public_ip(ip: str) -> bool:
 
 
 def is_private_ip(ip: str) -> bool:
-    """Vérifie si une IP est privée."""
+    """Vérifie si une IP appartient à un réseau privé (RFC 1918)."""
     try:
         addr = ipaddress.ip_address(ip)
         for network in PRIVATE_RANGES:
@@ -59,15 +63,14 @@ def is_private_ip(ip: str) -> bool:
 
 def classify_ip(ip: str) -> Dict[str, Any]:
     """
-    Classifie une IP et retourne ses informations.
-
-    Returns:
-        Dict avec type (public/private/reserved/invalid), is_geolocatable, etc.
+    Analyse une IP pour retourner son type précis.
+    Types possibles: public, private, loopback, multicast, reserved, invalid.
+    Indique aussi si l'IP est éligible à la géolocalisation (is_geolocatable).
     """
     try:
         addr = ipaddress.ip_address(ip)
 
-        # Loopback
+        # Loopback (127.0.0.1, ::1)
         if addr.is_loopback:
             return {"ip": ip, "type": "loopback", "is_geolocatable": False}
 
@@ -75,16 +78,16 @@ def classify_ip(ip: str) -> Dict[str, Any]:
         if addr.is_multicast:
             return {"ip": ip, "type": "multicast", "is_geolocatable": False}
 
-        # Private
+        # Réseau Privé
         if is_private_ip(ip):
             return {"ip": ip, "type": "private", "is_geolocatable": False}
 
-        # Reserved
+        # Plages Réservées
         for network in RESERVED_RANGES:
             if addr in network:
                 return {"ip": ip, "type": "reserved", "is_geolocatable": False}
 
-        # Public
+        # IP Publique Standard
         return {
             "ip": ip,
             "type": "public",
@@ -97,7 +100,11 @@ def classify_ip(ip: str) -> Dict[str, Any]:
 
 
 def sanitize_ip(ip: str) -> str:
-    """Nettoie et valide une adresse IP."""
+    """
+    Nettoie et valide format d'une adresse IP.
+    Supprime les espaces et vérifie la conformité (v4/v6).
+    Lève une erreur si l'IP est malformée.
+    """
     ip = ip.strip()
     try:
         return str(ipaddress.ip_address(ip))

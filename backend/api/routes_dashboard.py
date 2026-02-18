@@ -19,20 +19,26 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 @router.get("/overview")
 async def get_dashboard_overview(
-    hours: int = Query(24, ge=1, le=720),
+    hours: int = Query(24, ge=1, le=720, description="Période glissante en heures"),
 ) -> Dict[str, Any]:
-    """Retourne les données principales du dashboard."""
+    """
+    Agrège les KPI principaux pour la vue 'Overview' du dashboard.
+    Données temps réel + statistiques historiques.
+    """
     async with async_session_factory() as db:
         try:
+            # Exécution parallèle des requêtes DB pour réduire la latence
             alert_stats = await asyncio.wait_for(repository.get_alert_stats(db, hours=hours), timeout=1.5)
             anomaly_rate = await asyncio.wait_for(repository.get_anomaly_rate(db, hours=hours), timeout=1.5)
             total_flows = await asyncio.wait_for(repository.count_flows(db), timeout=1.5)
         except Exception:
+            # Fallback en cas de timeout ou erreur DB pour ne pas casser le dashboard
             alert_stats = {"total": 0, "by_severity": {}}
             anomaly_rate = 0.0
             total_flows = 0
 
     try:
+        # Score de menace temps réel depuis Redis (calculé par AlertService)
         threat_score = await get_threat_score()
     except Exception:
         threat_score = 0.0
@@ -51,7 +57,9 @@ async def get_dashboard_overview(
 async def get_attack_distribution(
     hours: int = Query(24, ge=1, le=720),
 ):
-    """Distribution des types d'attaques détectées."""
+    """
+    Répartition des types d'attaques (ex: DOS, PortScan...) pour le camembert.
+    """
     async with async_session_factory() as db:
         try:
             distribution = await asyncio.wait_for(repository.get_attack_distribution(db, hours=hours), timeout=1.5)
@@ -65,7 +73,9 @@ async def get_top_threats(
     limit: int = Query(10, ge=1, le=50),
     hours: int = Query(24, ge=1, le=720),
 ):
-    """Top IPs menaçantes avec détails."""
+    """
+    Liste des IPs les plus actives dans les attaques récentes.
+    """
     async with async_session_factory() as db:
         try:
             top_ips = await asyncio.wait_for(repository.get_top_alert_ips(db, limit=limit, hours=hours), timeout=1.5)
@@ -78,7 +88,9 @@ async def get_top_threats(
 async def get_recent_alerts(
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Alertes les plus récentes pour le feed temps réel."""
+    """
+    Flux des dernières alertes pour le widget 'Live Alerts'.
+    """
     async with async_session_factory() as db:
         try:
             alerts = await asyncio.wait_for(repository.get_alerts(db, limit=limit), timeout=1.5)
@@ -101,7 +113,12 @@ async def get_recent_alerts(
 
 @router.get("/metrics")
 async def get_system_metrics():
-    """Métriques système temps réel."""
+    """
+    Métriques techniques brutes depuis Redis (compteurs atomiques).
+    - packets_processed: performance capture
+    - flows_analyzed: performance IA
+    - alerts_generated: activité détection
+    """
     try:
         packets_processed = await get_metric("packets_processed")
         flows_analyzed = await get_metric("flows_analyzed")
@@ -120,16 +137,21 @@ async def get_system_metrics():
 async def get_traffic_timeseries(
     hours: int = Query(24, ge=1, le=720),
 ):
-    """Série temporelle du trafic par heure: normal/suspicious/attacks."""
+    """
+    Construit les séries temporelles pour le graphique principal.
+    Superpose le trafic total, suspect et les attaques confirmées par heure.
+    """
     since = datetime.utcnow() - timedelta(hours=hours)
     bucket = func.date_trunc("hour", NetworkFlow.timestamp)
 
+    # Requête 1: Trafic total par heure
     total_q = (
         select(bucket.label("bucket"), func.count(NetworkFlow.id).label("total"))
         .where(NetworkFlow.timestamp >= since)
         .group_by(bucket)
     )
 
+    # Requête 2: Activité suspecte (Alerts low/medium)
     suspicious_q = (
         select(bucket.label("bucket"), func.count(Alert.id).label("count"))
         .join(Alert, Alert.flow_id == NetworkFlow.id)
@@ -138,6 +160,7 @@ async def get_traffic_timeseries(
         .group_by(bucket)
     )
 
+    # Requête 3: Attaques confirmées (Alerts high/critical)
     attacks_q = (
         select(bucket.label("bucket"), func.count(Alert.id).label("count"))
         .join(Alert, Alert.flow_id == NetworkFlow.id)
@@ -154,6 +177,7 @@ async def get_traffic_timeseries(
         except Exception:
             return {"series": [], "period_hours": hours}
 
+    # Agrégation et formatage des données
     totals = {row.bucket: int(row.total) for row in total_rows}
     suspicious = {row.bucket: int(row.count) for row in suspicious_rows}
     attacks = {row.bucket: int(row.count) for row in attack_rows}
@@ -180,7 +204,9 @@ async def get_traffic_timeseries(
 async def get_protocol_distribution(
     hours: int = Query(24, ge=1, le=720),
 ):
-    """Distribution des protocoles réseau observés sur la période."""
+    """
+    Répartition du trafic par protocole (TCP, UDP, ICMP...).
+    """
     since = datetime.utcnow() - timedelta(hours=hours)
     async with async_session_factory() as db:
         try:

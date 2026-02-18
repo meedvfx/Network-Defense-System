@@ -30,7 +30,11 @@ class GeoResponse(BaseModel):
 
 @router.get("/locate/{ip}", response_model=GeoResponse)
 async def locate_ip(ip: str):
-    """Géolocalise une adresse IP."""
+    """
+    Géolocalise une adresse IP spécifique.
+    Retourne les infos standardisées (Pays, Ville, FAI, Lat/Lon).
+    Si l'IP est locale ou privée, retourne is_local=True sans données géo.
+    """
     result = await geo_service.locate_ip(ip)
     if not result:
         return GeoResponse(ip_address=ip, is_local=True)
@@ -50,7 +54,10 @@ async def locate_ip(ip: str):
 
 @router.post("/locate-batch")
 async def locate_batch(ips: List[str]):
-    """Géolocalise un batch d'IPs."""
+    """
+    Géolocalise une liste d'IPs en une seule requête optimisée (Batch).
+    Utile pour enrichir des listes de flux ou d'alertes côté frontend.
+    """
     results = await geo_service.locate_ips(ips)
     return results
 
@@ -59,8 +66,12 @@ async def locate_batch(ips: List[str]):
 async def get_attack_map(
     db: AsyncSession = Depends(get_db),
 ):
-    """Retourne les données pour la carte des attaques."""
+    """
+    Fournit les données agrégées pour la carte mondiale des cyberattaques.
+    Croise les IPs les plus menaçantes avec leurs coordonnées géographiques.
+    """
     try:
+        # 1. Récupération du Top 50 des attaquants (24h)
         top_ips = await repository.get_top_alert_ips(db, limit=50, hours=24)
     except Exception as e:
         logger.warning(f"Attack map indisponible (DB): {e}")
@@ -71,6 +82,7 @@ async def get_attack_map(
     if not ips:
         return {"markers": []}
 
+    # 2. Enrichissement Géographique
     geo_data = await geo_service.get_attack_map_data(ips)
 
     markers = []
@@ -91,7 +103,10 @@ async def get_attack_map(
 
 @router.get("/cached")
 async def get_cached_geolocations(db: AsyncSession = Depends(get_db)):
-    """Retourne toutes les géolocalisations en cache DB."""
+    """
+    Retourne l'intégralité du cache de géolocalisation.
+    Peut être utilisé pour le débogage ou pour précharger des maps hors ligne.
+    """
     try:
         geos = await repository.get_all_geolocations(db)
     except Exception as e:

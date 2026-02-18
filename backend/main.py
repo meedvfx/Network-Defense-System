@@ -40,21 +40,25 @@ logger = logging.getLogger("NDS")
 
 
 # ---- Lifecycle ----
+# ---- Cycle de Vie (Startup/Shutdown) ----
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gestion du cycle de vie de l'application."""
+    """
+    Gestionnaire de contexte pour le cycle de vie de l'application.
+    S'exécute au démarrage (avant d'accepter des requêtes) et à l'arrêt.
+    """
     logger.info("=" * 60)
     logger.info("  Network Defense System - Démarrage")
     logger.info("=" * 60)
 
-    # Initialisation DB
+    # 1. Connexion Base de Données
     try:
         await init_db()
         logger.info("✓ PostgreSQL connecté")
     except Exception as e:
         logger.warning(f"✗ PostgreSQL indisponible : {e}")
 
-    # Initialisation Redis
+    # 2. Lien Redis
     try:
         redis = await get_redis()
         await redis.ping()
@@ -65,7 +69,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"✓ API prête sur http://{settings.app_host}:{settings.app_port}")
     logger.info(f"✓ Swagger UI : http://{settings.app_host}:{settings.app_port}/docs")
 
-    # Scheduler de rétention
+    # 3. Démarrage des tâches de fond (Scheduler de rétention)
     try:
         if data_retention_service.start_scheduler():
             logger.info("✓ Scheduler de rétention démarré")
@@ -74,9 +78,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("=" * 60)
 
-    yield
+    yield # L'application tourne ici
 
-    # Cleanup
+    # ---- Phase d'Arrêt ----
     logger.info("Arrêt du système...")
     await data_retention_service.stop_scheduler()
     await close_db()
@@ -84,7 +88,7 @@ async def lifespan(app: FastAPI):
     logger.info("Network Defense System arrêté")
 
 
-# ---- Application ----
+# ---- Initialisation FastAPI ----
 app = FastAPI(
     title="Network Defense System",
     description=(
@@ -98,18 +102,18 @@ app = FastAPI(
 )
 
 # ---- Middleware ----
-# CORS
+# Sécurité CORS (Cross-Origin Resource Sharing)
 cors_config = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
     **cors_config,
 )
 
-# Rate Limiting
+# Protection Rate Limiting (Anti-Bruteforce / DOS applicatif)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ---- Routes ----
+# ---- Montage des Routes ----
 app.include_router(detection_router)
 app.include_router(alerts_router)
 app.include_router(geo_router)
@@ -121,10 +125,10 @@ app.include_router(feedback_router)
 app.websocket("/ws/alerts")(websocket_endpoint)
 
 
-# ---- Root ----
+# ---- Endpoints Système ----
 @app.get("/", tags=["System"])
 async def root():
-    """Endpoint racine - santé du système."""
+    """Endpoint racine - vérification rapide."""
     return {
         "name": settings.app_name,
         "version": "1.0.0",
@@ -135,7 +139,10 @@ async def root():
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    """Vérification de santé détaillée."""
+    """
+    Health check complet pour Kubernetes ou Docker Healthcheck.
+    Vérifie la connectivité DB et Redis.
+    """
     health = {
         "status": "healthy",
         "services": {

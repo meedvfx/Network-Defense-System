@@ -20,10 +20,12 @@ from backend.services import alert_service, capture_service, detection_service
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# ---- Configuration du module ----
 router = APIRouter(prefix="/api/detection", tags=["Detection"])
 _init_attempted = False
 _capture_task: Optional[asyncio.Task] = None
 
+# Configuration initiale de la capture (au chargement du module)
 capture_service.configure_capture(
     interface=settings.capture_interface,
     buffer_size=settings.capture_buffer_size,
@@ -32,7 +34,10 @@ capture_service.configure_capture(
 
 
 def ensure_detection_ready() -> bool:
-    """Initialise le service de détection à la demande."""
+    """
+    Vérifie et initialise le service de détection (Lazy Loading).
+    Évite de bloquer le démarrage de l'app si les modèles sont lourds.
+    """
     global _init_attempted
     if not detection_service.is_ready() and not _init_attempted:
         _init_attempted = True
@@ -41,22 +46,22 @@ def ensure_detection_ready() -> bool:
 
 
 class DetectionRequest(BaseModel):
-    """Requête de détection sur un vecteur de features."""
-    features: List[float]
-    ip_reputation: float = 0.0
+    """Modèle de requête pour l'endpoint /analyze."""
+    features: List[float] # Vecteur de features brut
+    ip_reputation: float = 0.0 # Score externe optionnel
 
 
 class DetectionResponse(BaseModel):
-    """Réponse de détection."""
-    decision: str
-    severity: str
-    threat_score: float
-    attack_type: Optional[str]
-    supervised_confidence: float
-    anomaly_score: float
-    is_anomaly: bool
-    priority: int
-    reasoning: str
+    """Modèle de réponse standardisée pour une détection."""
+    decision: str # normal, suspicious, confirmed_attack
+    severity: str # low, medium, high, critical
+    threat_score: float # 0.0 à 1.0
+    attack_type: Optional[str] # Type d'attaque si identifié
+    supervised_confidence: float # Confiance du modèle classifieur
+    anomaly_score: float # Score d'anomalie normalisé
+    is_anomaly: bool # True si seuil dépassé
+    priority: int # 1 (critique) à 5 (info)
+    reasoning: str # Explication textuelle
 
 
 class CaptureInterfaceRequest(BaseModel):
@@ -64,6 +69,7 @@ class CaptureInterfaceRequest(BaseModel):
 
 
 def _build_reasoning(decision: dict) -> str:
+    """Formate une explication lisible de la décision prise."""
     details = decision.get("details", {})
     return (
         f"decision={decision.get('decision', 'unknown')}; "
@@ -74,6 +80,7 @@ def _build_reasoning(decision: dict) -> str:
 
 
 def _build_flow_data(flow) -> dict:
+    """Convertit un objet Flow interne en dictionnaire pour la DB."""
     flow_dict = flow.to_dict()
     total_packets = max(1, flow.total_packets)
     duration = max(flow.duration, 0.0)
@@ -93,11 +100,12 @@ def _build_flow_data(flow) -> dict:
         "total_bwd_packets": flow.total_bwd_packets,
         "flow_bytes_per_s": (total_bytes / duration) if duration > 0 else total_bytes,
         "flow_packets_per_s": (total_packets / duration) if duration > 0 else float(total_packets),
-        "raw_features": None,
+        "raw_features": None, # On ne stocke pas les raw features en DB pour gagner de la place (optionnel)
     }
 
 
 async def _persist_flow_only(flow) -> None:
+    """Enregistre un flux sans analyse (si erreur ou service non prêt)."""
     async with async_session_factory() as db:
         try:
             await repository.create_flow(db, _build_flow_data(flow))
@@ -108,14 +116,20 @@ async def _persist_flow_only(flow) -> None:
 
 
 async def _persist_flow_result(flow, result: dict) -> None:
+    """
+    Enregistre le flux ET les résultats de son analyse (Prédictions, Anomalies, Alertes).
+    Tout est fait dans une transaction atomique.
+    """
     decision = result.get("decision", {})
     supervised = result.get("supervised", {})
     unsupervised = result.get("unsupervised", {})
 
     async with async_session_factory() as db:
         try:
+            # 1. Création du Flux
             created_flow = await repository.create_flow(db, _build_flow_data(flow))
 
+            # 2. Enregistrement Prédiction Supervisée
             await repository.create_prediction(
                 db,
                 {
@@ -128,6 +142,7 @@ async def _persist_flow_result(flow, result: dict) -> None:
                 },
             )
 
+            # 3. Enregistrement Score Anomalie
             await repository.create_anomaly(
                 db,
                 {
@@ -140,6 +155,7 @@ async def _persist_flow_result(flow, result: dict) -> None:
                 },
             )
 
+            # 4. Création d'Alerte si nécessaire
             if decision.get("decision") and decision.get("decision") != "normal":
                 alert_payload = await alert_service.create_alert(
                     flow_id=created_flow.id,
@@ -157,6 +173,7 @@ async def _persist_flow_result(flow, result: dict) -> None:
                 )
                 await repository.create_alert(db, alert_payload)
 
+            # 5. MAJ Score Global de Menace
             await alert_service.update_threat_score(float(decision.get("final_risk_score", 0.0)))
             await db.commit()
         except Exception as e:
@@ -165,6 +182,7 @@ async def _persist_flow_result(flow, result: dict) -> None:
 
 
 async def _persist_completed_flows(flows: list) -> None:
+    """Traite un lot de flux terminés : analyse et persistance."""
     if detection_service.is_ready():
         for flow in flows:
             result = detection_service.analyze_flow(flow)
@@ -173,19 +191,26 @@ async def _persist_completed_flows(flows: list) -> None:
             else:
                 await _persist_flow_result(flow, result)
     else:
+        # Fallback si le service d'IA n'est pas prêt
         for flow in flows:
             await _persist_flow_only(flow)
 
 
 async def _capture_loop() -> None:
+    """
+    Boucle principale de capture en arrière-plan.
+    Récupère les paquets, construit les flux, et les envoie à l'analyse par lots.
+    """
     logger.info("Boucle de capture démarrée")
     ensure_detection_ready()
     last_force_flush = time.time()
 
     while capture_service.is_running():
         try:
+            # Récupération des flux terminés (timeout ou fin TCP)
             completed_flows = capture_service.process_captured_packets()
 
+            # Flush forcé toutes les 5s pour éviter que des flux restent coincés
             now = time.time()
             if now - last_force_flush >= 5:
                 completed_flows.extend(capture_service.force_complete_all())
@@ -195,13 +220,14 @@ async def _capture_loop() -> None:
                 await asyncio.sleep(1)
                 continue
 
+            # Traitement async des flux
             await _persist_completed_flows(completed_flows)
         except Exception as e:
             logger.error(f"Erreur boucle capture: {e}")
 
         await asyncio.sleep(1)
 
-    # Flush final
+    # Flush final à l'arrêt
     try:
         remaining = capture_service.force_complete_all()
         if remaining:
@@ -216,7 +242,7 @@ async def _capture_loop() -> None:
 async def analyze_features(request: DetectionRequest):
     """
     Analyse un vecteur de features via le pipeline hybride.
-    Utile pour les tests et l'intégration.
+    Endpoint utilisé principalement pour le replay ou les tests unitaires.
     """
     if not ensure_detection_ready():
         raise HTTPException(status_code=503, detail="Modèles non chargés")
@@ -243,7 +269,7 @@ async def analyze_features(request: DetectionRequest):
 
 @router.get("/status")
 async def detection_status():
-    """Retourne l'état du service de détection."""
+    """Retourne l'état complet du service de détection (modèles chargés, statut...)."""
     ensure_detection_ready()
     status_data = detection_service.get_status()
     return {
@@ -260,12 +286,16 @@ async def detection_status():
 
 @router.post("/capture/start")
 async def start_capture():
-    """Démarre la capture réseau."""
+    """
+    Démarre la capture réseau en arrière-plan.
+    Lance la tâche asynchrone _capture_loop.
+    """
     global _capture_task
 
     if capture_service.is_running():
         return {"status": "already_running", "message": "Capture réseau déjà active"}
 
+    # Tentative de démarrage (avec fallback auto)
     capture_service.start_capture_with_fallback()
     await asyncio.sleep(0.5)
 
@@ -294,7 +324,7 @@ async def start_capture():
 
 @router.post("/capture/stop")
 async def stop_capture():
-    """Arrête la capture réseau."""
+    """Arrête la capture réseau et la tâche de fond associée."""
     global _capture_task
 
     capture_service.stop_capture()
@@ -311,7 +341,7 @@ async def stop_capture():
 
 @router.get("/capture/status")
 async def capture_status():
-    """Retourne l'état de la capture."""
+    """Retourne l'état de la capture (paquets, buffer, flux actifs...)."""
     status = capture_service.get_status()
     return {
         **status,
@@ -321,7 +351,7 @@ async def capture_status():
 
 @router.get("/capture/interfaces")
 async def capture_interfaces():
-    """Retourne la liste des interfaces réseau détectées."""
+    """Liste les interfaces réseau disponibles sur la machine hôte."""
     status = capture_service.get_status()
     return {
         "configured_interface": capture_service.get_interface(),
@@ -331,7 +361,7 @@ async def capture_interfaces():
 
 @router.post("/capture/interface")
 async def set_capture_interface(request: CaptureInterfaceRequest):
-    """Configure l'interface de capture réseau (hors exécution)."""
+    """Change l'interface de capture (nécessite un arrêt/relance)."""
     if capture_service.is_running():
         return {
             "status": "error",

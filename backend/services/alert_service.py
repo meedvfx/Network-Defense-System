@@ -18,7 +18,22 @@ async def create_alert(
     decision: Dict[str, Any],
     flow_metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Crée une alerte à partir d'une décision du moteur hybride."""
+    """
+    Crée une alerte structurée à partir d'une décision positive du moteur de détection.
+    
+    Actions:
+    1. Formate les données de l'alerte (sévérité, type, score...).
+    2. Publie l'alerte sur Redis pour le temps réel (WebSocket).
+    3. Logue l'événement pour traçabilité.
+    
+    Args:
+        flow_id: ID unique du flux réseau associé.
+        decision: Dictionnaire de résultat du moteur hybride.
+        flow_metadata: Métadonnées du flux (IPs, ports...).
+        
+    Returns:
+        Dict: Données de l'alerte créée.
+    """
     global _alert_count
 
     alert_data = {
@@ -41,6 +56,7 @@ async def create_alert(
 
     _alert_count += 1
 
+    # Publication temps réel via Redis Pub/Sub
     try:
         await publish_alert(
             {
@@ -60,7 +76,10 @@ async def create_alert(
 
 
 async def update_threat_score(score: float) -> None:
-    """Met à jour le score de menace global."""
+    """
+    Met à jour le score de menace global du système dans le cache Redis.
+    Ce score est affiché en haut du dashboard.
+    """
     try:
         await set_threat_score(score)
     except Exception as e:
@@ -68,4 +87,5 @@ async def update_threat_score(score: float) -> None:
 
 
 def total_alerts() -> int:
+    """Retourne le nombre total d'alertes générées depuis le démarrage."""
     return _alert_count

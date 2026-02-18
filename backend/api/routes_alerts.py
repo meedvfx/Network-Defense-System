@@ -14,7 +14,10 @@ from backend.database import repository
 router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
 
 
+# ---- Schémas de données ----
+
 class AlertResponse(BaseModel):
+    """Schéma de réponse pour une alerte."""
     id: str
     timestamp: str
     severity: str
@@ -27,18 +30,24 @@ class AlertResponse(BaseModel):
 
 
 class AlertUpdateRequest(BaseModel):
+    """Schéma de mise à jour du statut."""
     status: str  # open, acknowledged, resolved, false_positive
 
 
+# ---- Endpoints ----
+
 @router.get("/", response_model=List[AlertResponse])
 async def get_alerts(
-    severity: Optional[str] = Query(None, description="Filtrer par severity"),
-    status: Optional[str] = Query(None, description="Filtrer par status"),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    severity: Optional[str] = Query(None, description="Filtrer par sévérité (low, medium, high, critical)"),
+    status: Optional[str] = Query(None, description="Filtrer par statut (open, acknowledged, resolved)"),
+    limit: int = Query(50, ge=1, le=200, description="Nombre d'éléments par page"),
+    offset: int = Query(0, ge=0, description="Décalage pour la pagination"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Liste les alertes avec filtres et pagination."""
+    """
+    Récupère la liste des alertes avec options de filtrage et pagination.
+    Utilisé par la page 'Alertes' du dashboard.
+    """
     alerts = await repository.get_alerts(
         db=db, severity=severity, status=status, limit=limit, offset=offset
     )
@@ -64,7 +73,9 @@ async def update_alert_status(
     request: AlertUpdateRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Met à jour le statut d'une alerte."""
+    """
+    Met à jour le cycle de vie d'une alerte (ex: marquer comme résolue).
+    """
     valid_statuses = ["open", "acknowledged", "resolved", "false_positive"]
     if request.status not in valid_statuses:
         return {"error": f"Status invalide. Valides : {valid_statuses}"}
@@ -75,20 +86,25 @@ async def update_alert_status(
 
 @router.get("/stats")
 async def get_alert_stats(
-    hours: int = Query(24, ge=1, le=720),
+    hours: int = Query(24, ge=1, le=720, description="Période en heures"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Statistiques des alertes sur une période."""
+    """
+    Fournit les statistiques agrégées (total, par sévérité) pour les widgets en haut du dashboard.
+    """
     stats = await repository.get_alert_stats(db, hours=hours)
     return stats
 
 
 @router.get("/top-ips")
 async def get_top_ips(
-    limit: int = Query(10, ge=1, le=50),
-    hours: int = Query(24, ge=1, le=720),
+    limit: int = Query(10, ge=1, le=50, description="Nombre max d'IPs à retourner"),
+    hours: int = Query(24, ge=1, le=720, description="Période en heures"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Top IPs malveillantes par nombre d'alertes."""
+    """
+    Liste les IPs sources les plus problématiques (celles générant le plus d'alertes).
+    Utilisé pour le tableau 'Top Attackers'.
+    """
     ips = await repository.get_top_alert_ips(db, limit=limit, hours=hours)
     return ips

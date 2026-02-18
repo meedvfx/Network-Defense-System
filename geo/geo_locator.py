@@ -19,31 +19,37 @@ IP_API_BATCH_URL = "http://ip-api.com/batch"
 
 class GeoLocator:
     """
-    Géolocalise les adresses IP publiques via ip-api.com.
-    Cache les résultats pour éviter les requêtes répétées.
+    Service de géolocalisation IP asynchrone.
+    Utilise l'API externe ip-api.com pour enrichir les données.
+    Intègre un cache mémoire local pour limiter les appels API (Rate Limit 45 req/min).
     """
 
     def __init__(self, cache_ttl: int = 86400):
         """
+        Initialise le service de géolocalisation.
+        
         Args:
-            cache_ttl: Durée du cache en secondes (24h par défaut).
+            cache_ttl: Durée de vie du cache en secondes (Défaut: 24h).
         """
         self.cache_ttl = cache_ttl
         self._local_cache: Dict[str, dict] = {}
 
     async def locate(self, ip: str) -> Optional[Dict[str, Any]]:
         """
-        Géolocalise une adresse IP.
-
-        Args:
-            ip: Adresse IP à géolocaliser.
-
+        Géolocalise une adresse IP unique.
+        
+        Logique:
+        1. Vérifie si l'IP est publique (inutile de géolocaliser 192.168.x.x).
+        2. Vérifie le cache local.
+        3. Appelle l'API externe si nécessaire.
+        
         Returns:
-            Dict avec pays, ville, ASN, ISP, coordonnées. None si impossible.
+            Dictionnaire avec Pays, Ville, Lat/Lon, ISP, ASN.
+            Retourne None en cas d'erreur technique (timeout, API down).
         """
         ip = sanitize_ip(ip)
 
-        # Vérifier si IP publique
+        # 1. Filtrage IP Privée/Locale
         if not is_public_ip(ip):
             logger.debug(f"IP {ip} n'est pas publique, géolocalisation ignorée")
             return {
@@ -53,11 +59,11 @@ class GeoLocator:
                 "is_local": True,
             }
 
-        # Cache local
+        # 2. Vérification Cache
         if ip in self._local_cache:
             return self._local_cache[ip]
 
-        # Appel API
+        # 3. Appel API Externe
         try:
             return await self._query_ip_api(ip)
         except Exception as e:
@@ -65,7 +71,10 @@ class GeoLocator:
             return None
 
     async def _query_ip_api(self, ip: str) -> Optional[Dict[str, Any]]:
-        """Interroge l'API ip-api.com."""
+        """
+        Effectue la requête HTTP vers ip-api.com.
+        Gère les erreurs réseaux et parse la réponse JSON.
+        """
         url = IP_API_URL.format(ip=ip)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -77,6 +86,7 @@ class GeoLocator:
             logger.warning(f"ip-api failed for {ip}: {data.get('message')}")
             return None
 
+        # Normalisation des données
         result = {
             "ip_address": ip,
             "country": data.get("country", "Unknown"),
@@ -91,31 +101,25 @@ class GeoLocator:
             "is_local": False,
         }
 
-        # Mettre en cache
+        # Mise en cache
         self._local_cache[ip] = result
-
         logger.info(f"Géoloc {ip} → {result['country']}/{result['city']}")
 
         return result
 
     async def locate_batch(self, ips: list) -> list:
         """
-        Géolocalise un batch d'IPs.
-        Utilise l'endpoint batch de ip-api.com (max 100 IPs).
-
-        Args:
-            ips: Liste d'adresses IP.
-
-        Returns:
-            Liste de résultats de géolocalisation.
+        Géolocalise une liste d'IPs en une seule requête (Batch).
+        Optimisation critique pour les performances du dashboard.
+        L'API ip-api.com supporte jusqu'à 100 IPs par requête POST.
         """
-        # Filtrer les IPs publiques
+        # Filtrer pour ne garder que les IPs publiques
         public_ips = [ip for ip in ips if is_public_ip(ip)]
 
         if not public_ips:
             return []
 
-        # Limiter à 100 (limite ip-api)
+        # Tronquer à 100 IPs (limite stricte de l'API gratuite)
         batch = public_ips[:100]
 
         try:
@@ -152,5 +156,5 @@ class GeoLocator:
             return []
 
     def clear_cache(self):
-        """Vide le cache local."""
+        """Vide le cache local (utile pour tests ou refresh forcé)."""
         self._local_cache.clear()
