@@ -43,50 +43,52 @@ Le **Network Defense System (NDS)** est une plateforme SOC (Security Operations 
 
 ## 🏗️ Architecture
 
+## 🏗️ Architecture
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Dashboard React (Vite)                       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
-│  │ Alertes  │ │ Charts   │ │ Map      │ │ Threat Score     │   │
+│  │ Alertes  │ │ Graphiques│ │ Carte    │ │ Score Menace     │   │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │
 ├───────────────────────┬─────────────────────────────────────────┤
 │    FastAPI Backend     │           WebSocket Stream              │
 │  ┌─────────────────┐  │  ┌───────────────────────────────────┐  │
-│  │ API Routes      │  │  │ Real-time Alert Broadcasting      │  │
-│  │ Services Layer  │  │  │ Redis Pub/Sub                     │  │
+│  │ Routes API      │  │  │ Diffusion Alertes Temps Réel      │  │
+│  │ Couche Services │  │  │ Redis Pub/Sub                     │  │
 │  │ Repository      │  │  └───────────────────────────────────┘  │
 │  └─────────────────┘  │                                         │
 ├───────────────────────┴─────────────────────────────────────────┤
-│                  AI Inference Pipeline                            │
+│                  Pipeline d'Inférence IA                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
-│  │ Supervised    │  │ Unsupervised │  │ Hybrid Decision       │  │
-│  │ Predictor     │  │ Predictor    │  │ Engine                │  │
-│  │ (Classif.)    │  │ (Autoencoder)│  │ (Score + Priority)    │  │
+│  │ Prédict.      │  │ Prédict.     │  │ Moteur de Décision    │  │
+│  │ Supervisé     │  │ Non-Sup.     │  │ Hybride               │  │
+│  │ (Classif.)    │  │ (Autoencodeur)│  │ (Score + Priorité)    │  │
 │  └──────────────┘  └──────────────┘  └───────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ Preprocessing : DataValidator → FeatureSelector → Scaler │   │
+│  │ Pré-traitement : Validator → Selector → Scaler           │   │
 │  └──────────────────────────────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────┐  ┌──────────────┐  ┌─────────────────┐   │
-│  │ Packet Capture   │  │ Flow Builder │  │ Feature Extract. │   │
-│  │ (Scapy)          │  │ (5-tuple)    │  │ (CIC-compat.)   │   │
+│  │ Capture Paquets  │  │ Flow Builder │  │ Extract. Features│   │
+│  │ (Scapy)          │  │ (5-tuple)    │  │ (Compat. CIC)   │   │
 │  └──────────────────┘  └──────────────┘  └─────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │  PostgreSQL                    Redis                  GeoIP API  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Séparation Training / Production
+### Séparation Entraînement / Production
 
 ```
 ┌───────────────────────────┐     ┌────────────────────────────────┐
 │   Google Colab / Jupyter  │     │   Serveur Production (NDS)     │
 │                           │     │                                │
 │  Dataset CIC-IDS2017/2018 │     │  ai/artifacts/                 │
-│  → Feature Selection      │     │    model_supervised.keras       │
+│  → Sélection Features     │     │    model_supervised.keras       │
 │  → Scaling                │     │    model_unsupervised.keras     │
-│  → Train MLP supervisé    │────▶│    scaler.pkl                  │
-│  → Train Autoencoder      │     │    encoder.pkl                 │
+│  → Entrainement Supervisé │────▶│    scaler.pkl                  │
+│  → Entrainement Autoenc.  │     │    encoder.pkl                 │
 │  → Export .keras + .pkl   │     │    feature_selector.pkl        │
 │                           │     │                                │
 │  Aucun code d'entraînement│     │  → Chargement au démarrage     │
@@ -103,10 +105,10 @@ Le **Network Defense System (NDS)** est une plateforme SOC (Security Operations 
 | 🧠 **AI Supervisé** | Modèle Keras pré-entraîné (MLP/CNN-1D) pour classifier 7+ types d'attaques. |
 | 🔮 **AI Non-supervisé** | Autoencoder avec seuil adaptatif (μ + kσ) pour détecter les anomalies (Zero-day). |
 | ⚖️ **Moteur Hybride** | Fusion pondérée (Classes + Anomalie + Réputation IP) pour une décision de sécurité robuste. |
-| 📡 **Capture Réseau** | Moteur Scapy en thread séparé, reconstruction de flux (Flow Builder) et extraction ~78 features. |
+| 📡 **Capture Réseau** | Moteur Scapy en thread séparé, reconstruction de flux (Flow Builder) et extraction ~78 caractéristiques. |
 | 🌍 **Géolocalisation** | Enrichissement via ip-api.com avec mise en cache Redis pour la carte des menaces. |
 | 📊 **Dashboard** | Interface React temps réel (WebSocket) : Threat Score, Alertes, Carte, Métriques système. |
-| 🔧 **Production-Ready** | Architecture assynchrone (FastAPI + Celery-like tasks), Logging centralisé, Monitoring. |
+| 🔧 **Production-Ready** | Architecture asynchrone (FastAPI + Tâches de fond), Logging centralisé, Monitoring. |
 
 ---
 
@@ -130,7 +132,7 @@ Le **Network Defense System (NDS)** est une plateforme SOC (Security Operations 
 ```
 Network-Defense-System/
 ├── ai/                              # Module AI (inférence uniquement)
-│   ├── artifacts/                   # Modèles pré-entraînés (.keras + .pkl)
+│   ├── artifacts/                   # Artefacts pré-entraînés (.keras + .pkl)
 │   │   ├── model_supervised.keras   # Classifieur multi-classe
 │   │   ├── model_unsupervised.keras # Autoencoder (anomalie)
 │   │   ├── scaler.pkl               # StandardScaler fitté
@@ -140,7 +142,7 @@ Network-Defense-System/
 │   ├── config/
 │   │   └── model_config.py          # Chemins, seuils, poids hybrides
 │   ├── inference/
-│   │   ├── model_loader.py          # Charge tous les artifacts
+│   │   ├── model_loader.py          # Charge tous les artefacts
 │   │   ├── supervised_predictor.py  # Classification → type + proba
 │   │   ├── unsupervised_predictor.py# Anomalie → score + is_anomaly
 │   │   └── hybrid_decision_engine.py# Fusion → risk score + severity
@@ -315,7 +317,7 @@ npm run dev
 ### Architecture d'inférence (production)
 
 ```
-Features réseau brutes
+Caractéristiques réseau brutes
         │
         ▼
 ┌──────────────────┐
@@ -335,16 +337,16 @@ Features réseau brutes
 ┌────────┐  ┌──────────┐
 │Supervisé│  │Non-sup.  │
 │Predictor│  │Predictor │
-│→type    │  │→anomaly  │
+│→type    │  │→anomalie │
 │→proba   │  │→score    │
 └────┬───┘  └────┬─────┘
      └─────┬─────┘
            ▼
   ┌────────────────┐
-  │ Hybrid Decision │  Fusion pondérée + réputation IP
-  │ Engine          │  → attack_type, probability
-  │                 │  → anomaly_score, final_risk_score
-  │                 │  → severity, decision, priority
+  │ Moteur Décision │  Fusion pondérée + réputation IP
+  │ Hybride         │  → type_attaque, probabilité
+  │                 │  → score_anomalie, score_risque_final
+  │                 │  → sévérité, décision, priorité
   └─────────────────┘
 ```
 
@@ -367,15 +369,15 @@ Voir le guide complet : **[docs/TRAINING_GUIDE.md](docs/TRAINING_GUIDE.md)**
 
 ### Résumé :
 
-1. **Modèle supervisé** : MLP entraîné sur CIC-IDS2017/2018 avec SMOTE pour le balancing
-2. **Modèle non-supervisé** : Autoencoder entraîné **uniquement sur le trafic BENIGN**
-3. **Preprocessing** : Scaler et FeatureSelector fittés pendant l'entraînement
-4. **Export** : Fichiers `.keras` + `.pkl` déposés dans `ai/artifacts/`
+1. **Modèle supervisé** : MLP entraîné sur CIC-IDS2017/2018 avec SMOTE pour le balancing.
+2. **Modèle non-supervisé** : Autoencoder entraîné **uniquement sur le trafic BENIGN**.
+3. **Pré-traitement** : Scaler et FeatureSelector fittés pendant l'entraînement.
+4. **Export** : Fichiers `.keras` + `.pkl` déposés dans `ai/artifacts/`.
 
 ### Vérification :
 
 ```bash
-# Vérifier que tous les artifacts sont présents
+# Vérifier que tous les artefacts sont présents
 curl http://localhost:8000/api/models/status
 # → "all_artifacts_present": true
 ```
