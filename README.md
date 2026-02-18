@@ -43,8 +43,6 @@ Le **Network Defense System (NDS)** est une plateforme SOC (Security Operations 
 
 ## 🏗️ Architecture
 
-## 🏗️ Architecture
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Dashboard React (Vite)                       │
@@ -155,7 +153,7 @@ Network-Defense-System/
 │   │   ├── routes_alerts.py         # CRUD alertes
 │   │   ├── routes_geo.py            # Géolocalisation
 │   │   ├── routes_dashboard.py      # Stats et métriques
-│   │   ├── routes_models.py         # Statut des artifacts AI
+│   │   ├── routes_models.py         # Statut des artefacts AI
 │   │   ├── routes_feedback.py       # Feedback analyste
 │   │   └── websocket_handler.py     # Streaming temps réel
 │   ├── core/                        # Configuration et sécurité
@@ -173,7 +171,8 @@ Network-Defense-System/
 │   │   ├── anomaly_service.py       # Interface anomalies
 │   │   ├── geo_service.py           # Géolocalisation
 │   │   ├── alert_service.py         # Création d'alertes
-│   │   └── capture_service.py       # Gestion capture
+│   │   ├── capture_service.py       # Gestion capture
+│   │   └── data_retention_service.py# Nettoyage automatique des données
 │   └── main.py                      # Point d'entrée FastAPI
 ├── capture/                         # Capture réseau
 │   ├── packet_sniffer.py            # Scapy en thread séparé
@@ -186,7 +185,7 @@ Network-Defense-System/
 │   ├── src/
 │   │   ├── App.jsx                  # Application principale (6 vues)
 │   │   ├── main.jsx                 # Point d'entrée React
-│   │   └── index.css                # Thème dark cybersecurity
+│   │   └── index.css                # Thème et styles globaux
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
@@ -194,6 +193,8 @@ Network-Defense-System/
 │   ├── logger.py                    # Logging rotatif
 │   └── metrics.py                   # Métriques système (psutil)
 ├── docs/
+│   ├── PROBLEM_STATEMENT.md         # Problématique et solution NDS
+│   ├── USER_GUIDE.md                # Guide utilisateur du dashboard
 │   └── TRAINING_GUIDE.md            # Guide d'entraînement (Colab)
 ├── .env.example
 ├── requirements.txt
@@ -216,7 +217,7 @@ Network-Defense-System/
 ### 1. Cloner le projet
 
 ```bash
-git clone https://github.com/votre-repo/Network-Defense-System.git
+git clone https://github.com/meedvfx/Network-Defense-System.git
 cd Network-Defense-System
 ```
 
@@ -396,7 +397,7 @@ curl http://localhost:8000/api/models/status
 | `GET` | `/api/geo/locate/{ip}` | Géolocalise une IP |
 | `GET` | `/api/geo/attack-map` | Données carte des attaques |
 | `GET` | `/api/dashboard/overview` | Vue d'ensemble métriques |
-| `GET` | `/api/models/status` | Statut des artifacts AI |
+| `GET` | `/api/models/status` | Statut des artefacts AI |
 | `GET` | `/api/models/config` | Configuration d'inférence |
 | `POST` | `/api/feedback/` | Soumet un feedback analyste |
 | `WS` | `/ws/alerts` | Stream d'alertes temps réel |
