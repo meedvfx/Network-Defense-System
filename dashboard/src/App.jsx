@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Clock } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
 const API_BASE = '/api'
 const ATTACK_COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#3b82f6']
 
@@ -189,40 +191,42 @@ function AttackDistribution({ data }) {
 }
 
 // ========================================
-// AttackMap Component (placeholder sans Leaflet réel pour la démo)
+// AttackMap Component (Leaflet Integration)
 // ========================================
+const attackIcon = L.divIcon({
+    className: 'custom-attack-icon',
+    html: '<div style="width: 14px; height: 14px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444; border: 2px solid white;"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
+})
+
 function AttackMap({ markers }) {
+    const validMarkers = markers.filter(m => m.lat != null && m.lng != null);
+
     return (
-        <div className="map-container" style={{ position: 'relative', background: 'var(--bg-card)' }}>
-            <div style={{
-                position: 'absolute', inset: 0,
-                display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-                background: 'linear-gradient(180deg, rgba(59,130,246,0.05) 0%, rgba(139,92,246,0.05) 100%)',
-                gap: '16px',
-            }}>
-                <Globe size={48} style={{ color: '#3b82f6', opacity: 0.5 }} />
-                <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '4px' }}>
-                        Carte des Attaques Mondiales
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        {markers.length} sources détectées • Leaflet s'activera avec npm install
-                    </div>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', maxWidth: '500px' }}>
-                    {markers.map((m, i) => (
-                        <div key={i} style={{
-                            padding: '6px 12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)',
-                            borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px'
-                        }}>
-                            <Target size={12} color="#ef4444" />
-                            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{m.ip}</span>
-                            <span style={{ color: 'var(--text-secondary)' }}>— {m.city}, {m.country}</span>
-                            <span style={{ color: '#ef4444', fontWeight: 600 }}>({m.alert_count})</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
+        <div className="map-container" style={{ position: 'relative', background: 'var(--bg-card)', height: '400px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
+            <MapContainer
+                center={[20, 0]}
+                zoom={2}
+                scrollWheelZoom={false}
+                style={{ height: '100%', width: '100%' }}
+            >
+                <TileLayer
+                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                />
+                {validMarkers.map((m, i) => (
+                    <Marker key={i} position={[m.lat, m.lng]} icon={attackIcon}>
+                        <Popup>
+                            <div style={{ padding: '4px', color: '#111' }}>
+                                <strong style={{ color: '#ef4444', display: 'block', marginBottom: '4px' }}>{m.ip}</strong>
+                                <div style={{ marginBottom: '2px' }}>Localisation: {m.city || 'Inconnue'}, {m.country || 'Inconnu'}</div>
+                                <div>Alertes: <strong>{m.alert_count}</strong></div>
+                            </div>
+                        </Popup>
+                    </Marker>
+                ))}
+            </MapContainer>
         </div>
     )
 }
