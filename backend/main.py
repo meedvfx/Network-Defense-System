@@ -6,6 +6,8 @@ Initialise l'application, monte les routes et les middleware.
 import logging
 import asyncio
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+load_dotenv()  # Charge .env dans os.environ (pour os.getenv dans llm_engine, etc.)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

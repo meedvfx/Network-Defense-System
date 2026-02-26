@@ -48,7 +48,8 @@ class ReportingController:
         metrics = await get_period_metrics(session, start_time, end_time)
         
         # On calcule les tendances (comparaison vs l'équivalent passé)
-        trends = await analyze_trends(session, start_time, end_time)
+        # On passe les métriques déjà calculées pour éviter une requête DB redondante
+        trends = await analyze_trends(session, start_time, end_time, current_metrics=metrics)
         
         # On détermine le Threat Index algorithmique
         threat_idx = calculate_threat_index(metrics, trends)

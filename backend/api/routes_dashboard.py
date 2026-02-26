@@ -149,6 +149,7 @@ async def get_traffic_timeseries(
         select(bucket.label("bucket"), func.count(NetworkFlow.id).label("total"))
         .where(NetworkFlow.timestamp >= since)
         .group_by(bucket)
+        .order_by(bucket)
     )
 
     # Requête 2: Activité suspecte (Alerts low/medium)
@@ -158,6 +159,7 @@ async def get_traffic_timeseries(
         .where(NetworkFlow.timestamp >= since)
         .where(Alert.decision.in_(["suspicious", "unknown_anomaly"]))
         .group_by(bucket)
+        .order_by(bucket)
     )
 
     # Requête 3: Attaques confirmées (Alerts high/critical)
@@ -167,6 +169,7 @@ async def get_traffic_timeseries(
         .where(NetworkFlow.timestamp >= since)
         .where(Alert.decision == "confirmed_attack")
         .group_by(bucket)
+        .order_by(bucket)
     )
 
     async with async_session_factory() as db:
@@ -178,11 +181,11 @@ async def get_traffic_timeseries(
             return {"series": [], "period_hours": hours}
 
     # Agrégation et formatage des données
-    totals = {row.bucket: int(row.total) for row in total_rows}
-    suspicious = {row.bucket: int(row.count) for row in suspicious_rows}
-    attacks = {row.bucket: int(row.count) for row in attack_rows}
+    totals = {row.bucket: int(row.total or 0) for row in total_rows}
+    suspicious = {row.bucket: int(row.count or 0) for row in suspicious_rows}
+    attacks = {row.bucket: int(row.count or 0) for row in attack_rows}
 
-    buckets = sorted(totals.keys())
+    buckets = sorted(set(totals.keys()) | set(suspicious.keys()) | set(attacks.keys()))
     series = []
     for b in buckets:
         s = suspicious.get(b, 0)
@@ -223,12 +226,23 @@ async def get_protocol_distribution(
             return {"distribution": [], "period_hours": hours}
 
     protocol_names = {1: "ICMP", 6: "TCP", 17: "UDP"}
-    distribution = [
-        {
-            "name": protocol_names.get(int(row.protocol), f"PROTO-{int(row.protocol)}"),
-            "count": int(row.count),
-        }
-        for row in rows
-    ]
+    distribution = []
+    for row in rows:
+        raw_protocol = row.protocol
+        if raw_protocol is None:
+            name = "UNKNOWN"
+        else:
+            try:
+                proto_number = int(raw_protocol)
+                name = protocol_names.get(proto_number, f"PROTO-{proto_number}")
+            except (TypeError, ValueError):
+                name = str(raw_protocol).upper()
+
+        distribution.append(
+            {
+                "name": name,
+                "count": int(row.count or 0),
+            }
+        )
 
     return {"distribution": distribution, "period_hours": hours}

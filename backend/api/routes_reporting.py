@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.background import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 
@@ -11,6 +12,7 @@ from reporting.report_controller import ReportingController
 router = APIRouter(
     prefix="/api/reporting",
     tags=["Reporting"],
+    dependencies=[Depends(verify_api_key)],
     responses={404: {"description": "Non trouvé"}},
 )
 
@@ -38,12 +40,16 @@ async def generate_soc_report(
             pdf_path = result.get("pdf_path")
             if not pdf_path or not os.path.exists(pdf_path):
                 raise HTTPException(status_code=500, detail="Erreur lors de la génération du PDF.")
-                
+
+            # Nettoyage du fichier temporaire après envoi de la réponse
+            background_tasks = BackgroundTasks()
+            background_tasks.add_task(os.unlink, pdf_path)
+
             return FileResponse(
                 path=pdf_path,
                 filename="SOC_Report.pdf",
                 media_type="application/pdf",
-                # On pourrait le supprimer en background task post-response
+                background=background_tasks,
             )
             
         return result

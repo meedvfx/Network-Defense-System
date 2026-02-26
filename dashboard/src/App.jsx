@@ -30,10 +30,46 @@ const emptyOverview = {
 
 const toPieDistribution = (distribution = []) =>
     distribution.map((item, index) => ({
-        name: item.label,
-        value: item.count,
+        name: String(item.label || item.name || 'Unknown'),
+        value: Number(item.count || item.value || 0),
         color: ATTACK_COLORS[index % ATTACK_COLORS.length],
     }))
+
+const normalizeTrafficSeries = (series = []) =>
+    (Array.isArray(series) ? series : [])
+        .map((point) => ({
+            time: String(point?.time || '--:--'),
+            normal: Number(point?.normal || 0),
+            suspicious: Number(point?.suspicious || 0),
+            attacks: Number(point?.attacks || 0),
+        }))
+
+const normalizeProtocolDistribution = (distribution = []) =>
+    (Array.isArray(distribution) ? distribution : [])
+        .map((item) => ({
+            name: String(item?.name || item?.label || 'UNKNOWN'),
+            count: Number(item?.count || item?.value || 0),
+        }))
+        .filter((item) => item.count >= 0)
+        .sort((a, b) => b.count - a.count)
+
+function ChartEmptyState({ message = 'Aucune donnée disponible pour le moment.' }) {
+    return (
+        <div style={{
+            height: '280px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-secondary)',
+            fontSize: '13px',
+            border: '1px dashed var(--border-color)',
+            borderRadius: '10px',
+            background: 'var(--bg-primary)',
+        }}>
+            {message}
+        </div>
+    )
+}
 
 // ========================================
 // ThreatScoreRing Component
@@ -128,6 +164,16 @@ function AlertList({ alerts }) {
 // TrafficChart Component
 // ========================================
 function TrafficChart({ data }) {
+    const hasData = Array.isArray(data) && data.some((point) => (
+        Number(point?.normal || 0) > 0 ||
+        Number(point?.suspicious || 0) > 0 ||
+        Number(point?.attacks || 0) > 0
+    ))
+
+    if (!hasData) {
+        return <ChartEmptyState message="Aucun trafic détecté sur la période sélectionnée." />
+    }
+
     return (
         <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={data}>
@@ -162,6 +208,12 @@ function TrafficChart({ data }) {
 // AttackDistribution Component
 // ========================================
 function AttackDistribution({ data }) {
+    const hasData = Array.isArray(data) && data.some((item) => Number(item?.value || 0) > 0)
+
+    if (!hasData) {
+        return <ChartEmptyState message="Aucune attaque distribuée à afficher." />
+    }
+
     return (
         <ResponsiveContainer width="100%" height={280}>
             <PieChart>
@@ -331,7 +383,7 @@ function DashboardOverview() {
             if (!mounted) return
             setOverview(overviewData || emptyOverview)
             setAlerts(Array.isArray(recentAlerts) ? recentAlerts : [])
-            setTraffic(trafficData?.series || [])
+            setTraffic(normalizeTrafficSeries(trafficData?.series || []))
             setDistribution(toPieDistribution(attackData?.distribution || []))
             setMarkers(mapData?.markers || [])
             setCaptureRunning(Boolean(captureStatus?.is_running))
@@ -572,9 +624,9 @@ function TrafficView() {
             ])
 
             if (!mounted) return
-            setTraffic(trafficData?.series || [])
+            setTraffic(normalizeTrafficSeries(trafficData?.series || []))
             setDistribution(toPieDistribution(attackData?.distribution || []))
-            setProtocols(protocolData?.distribution || [])
+            setProtocols(normalizeProtocolDistribution(protocolData?.distribution || []))
         }
         load()
         const interval = setInterval(load, 5000)
@@ -603,19 +655,23 @@ function TrafficView() {
                     <div className="panel-header">
                         <h3><TrendingUp size={16} /> Top protocoles</h3>
                     </div>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={protocols}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip
-                                contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px' }}
-                                itemStyle={{ color: 'var(--text-primary)' }}
-                                labelStyle={{ color: 'var(--text-secondary)' }}
-                            />
-                            <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                    {Array.isArray(protocols) && protocols.some((p) => Number(p?.count || 0) > 0) ? (
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={protocols}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip
+                                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px' }}
+                                    itemStyle={{ color: 'var(--text-primary)' }}
+                                    labelStyle={{ color: 'var(--text-secondary)' }}
+                                />
+                                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <ChartEmptyState message="Aucune répartition protocolaire disponible." />
+                    )}
                 </div>
                 <div className="panel">
                     <div className="panel-header">

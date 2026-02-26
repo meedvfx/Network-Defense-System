@@ -12,7 +12,6 @@ from backend.core.config import get_settings
 settings = get_settings()
 
 # ---- API Key Header ----
-# ---- API Key Header ----
 # Définit le schéma de sécurité pour Swagger UI / OpenAPI
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

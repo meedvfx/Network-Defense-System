@@ -1,6 +1,5 @@
 import os
 import tempfile
-import markdown
 import textwrap
 import re
 from fpdf import FPDF

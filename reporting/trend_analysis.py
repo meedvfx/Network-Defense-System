@@ -5,15 +5,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from reporting.metrics_engine import get_period_metrics
 
-async def analyze_trends(session: AsyncSession, current_start: datetime, current_end: datetime) -> Dict[str, Any]:
+async def analyze_trends(
+    session: AsyncSession,
+    current_start: datetime,
+    current_end: datetime,
+    current_metrics: Dict[str, Any] = None,
+) -> Dict[str, Any]:
     """
     Compare les métriques de la période actuelle avec celles de la période précédente.
+    Accepte optionnellement les métriques courantes pré-calculées pour éviter une requête redondante.
     """
     duration = current_end - current_start
     prev_end = current_start
     prev_start = current_start - duration
     
-    current_metrics = await get_period_metrics(session, current_start, current_end)
+    if current_metrics is None:
+        current_metrics = await get_period_metrics(session, current_start, current_end)
     prev_metrics = await get_period_metrics(session, prev_start, prev_end)
     
     def calculate_variation(current: float, previous: float) -> str:

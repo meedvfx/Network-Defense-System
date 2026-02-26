@@ -124,8 +124,8 @@ class FeaturePipeline:
         
         Séquence :
         1. Validation stricte (nettoyage NaN/Inf)
-        2. Sélection de fonctionnalités (si activée)
-        3. Mise à l'échelle (Scaling)
+        2. Mise à l'échelle (Scaling)
+        3. Sélection de fonctionnalités (si activée)
 
         Args:
             features (np.ndarray): Tableau de features brutes (1D ou 2D).
@@ -143,28 +143,24 @@ class FeaturePipeline:
         # 1. Validation et nettoyage des données brutes
         cleaned = self.validator.validate_strict(features)
 
-        # 2. Application du Feature Selector (si disponible)
-        # Note: Doit être appliqué AVANT le scaler si c'est ainsi qu'il a été entraîné.
-        # Vérifiez l'ordre dans votre pipeline d'entraînement (généralement select -> scale ou scale -> select).
-        # Ici on suppose select -> scale ou scale -> select selon la logique d'entraînement.
-        # UPDATE: Pour la plupart des cas, StandardScaler doit être appliqué sur les features SÉLECTIONNÉES
-        # OU BIEN FeatureSelector sélectionne sur des features SCALÉES.
-        # Ici on applique SelectKBest sur les features brutes (nettoyées) puis on scale.
+        # 2. Application du Scaler (Normalisation) — AVANT la sélection
+        # Le scaler a été entraîné sur TOUTES les features brutes.
+        # Le feature selector a été entraîné sur les features SCALÉES.
+        # Ordre correct : scale → select (cohérent avec le pipeline d'entraînement).
+        try:
+            cleaned = self.scaler.transform(cleaned)
+        except Exception as e:
+            raise RuntimeError(f"Erreur de scaling : {e}. Vérifiez que le nombre de features correspond à l'entraînement.")
+
+        # 3. Application du Feature Selector (si disponible) — APRÈS le scaling
         if self.feature_selector is not None:
             try:
                 cleaned = self.feature_selector.transform(cleaned)
             except Exception as e:
-                # Fallback : si la selection échoue (ex: dimension mismatch), on loggue et on continue (risqué)
-                logger.warning(f"Feature selection échouée, utilisation des features brutes : {e}")
-
-        # 3. Application du Scaler (Normalisation)
-        try:
-            transformed = self.scaler.transform(cleaned)
-        except Exception as e:
-            raise RuntimeError(f"Erreur de scaling : {e}. Vérifiez que le nombre de features correspond à l'entraînement.")
+                logger.warning(f"Feature selection échouée, utilisation des features scalées : {e}")
 
         # Conversion explicite en float32 pour optimiser l'inférence TensorFlow
-        return transformed.astype(np.float32)
+        return cleaned.astype(np.float32)
 
     def decode_label(self, label_index: int) -> str:
         """Convertit un index de classe en nom d'attaque lisible."""

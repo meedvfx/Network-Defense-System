@@ -3,14 +3,9 @@ import json
 import logging
 import httpx
 from openai import AsyncOpenAI
-from dotenv import load_dotenv
-
-load_dotenv()
-from backend.core.config import get_settings
 
 logger = logging.getLogger("NDS.Reporting.LLM")
 
-# Assurez-vous que GET_SETTINGS() récupère ces variables, ou on les lit via os.environ ici.
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")

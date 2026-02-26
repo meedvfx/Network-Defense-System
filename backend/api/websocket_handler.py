@@ -83,3 +83,9 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
         if 'listener_task' in locals():
             listener_task.cancel()
+        if 'subscriber' in locals():
+            try:
+                await subscriber.unsubscribe()
+                await subscriber.aclose()
+            except Exception:
+                pass

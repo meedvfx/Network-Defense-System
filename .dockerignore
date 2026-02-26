@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Node (dashboard)
+dashboard/node_modules
+dashboard/dist
+
+# Logs & data
+logs/
+*.log
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Docs
+docs/
+README.md
+LICENSE

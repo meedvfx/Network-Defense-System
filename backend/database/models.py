@@ -130,7 +130,9 @@ class Alert(Base):
     status = Column(String(20), default="open", index=True)  # open, acknowledged, resolved, false_positive
     
     # Métadonnées contextuelles (ex: règle déclenchée, composants du score...)
-    alert_metadata = Column(JSONB, nullable=True)
+    # Note: la colonne SQL s'appelle "metadata", on utilise un nom Python explicite pour éviter
+    # le conflit avec l'attribut SQLAlchemy `Base.metadata`.
+    alert_metadata = Column("metadata", JSONB, nullable=True)
 
     # Relations
     flow = relationship("NetworkFlow", back_populates="alerts")
