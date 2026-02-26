@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Clock } from 'lucide-react'
+import { Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings, Radio, Target, TrendingUp, Zap, Eye, Clock, FileText } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -264,7 +264,7 @@ function Sidebar({ activeView, setActiveView }) {
         { id: 'alerts', label: 'Alertes', icon: Bell },
         { id: 'traffic', label: 'Trafic réseau', icon: Activity },
         { id: 'map', label: 'Carte des attaques', icon: Globe },
-        { id: 'models', label: 'Modèles AI', icon: Zap },
+        { id: 'reporting', label: 'Reporting IA', icon: FileText },
         { id: 'settings', label: 'Paramètres', icon: Settings },
     ]
 
@@ -667,56 +667,166 @@ function MapView() {
     )
 }
 
+
 // ========================================
-// Models View
+// Reporting View
 // ========================================
-function ModelsView() {
+function ReportingView() {
+    const [period, setPeriod] = useState(24);
+    const [detailLevel, setDetailLevel] = useState("Technical");
+    const [loading, setLoading] = useState(false);
+    const [report, setReport] = useState(null);
+    const [error, setError] = useState(null);
+
+    const handleGenerate = async () => {
+        setLoading(true);
+        setError(null);
+        setReport(null);
+        try {
+            const res = await fetch(`${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=json`, {
+                method: 'POST'
+            });
+            if (!res.ok) throw new Error("Erreur de l'API");
+            const data = await res.json();
+            setReport(data);
+        } catch (err) {
+            setError(err.message || 'Échec de la génération du rapport.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const downloadFormat = async (format) => {
+        try {
+            const res = await fetch(`${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=${format}`, {
+                method: 'POST'
+            });
+            if (!res.ok) throw new Error(`Erreur téléchargement ${format}`);
+
+            if (format === 'json') {
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `NDS_Report_${new Date().toISOString()}.${format}`;
+                a.click();
+            } else if (format === 'markdown') {
+                const data = await res.json();
+                const blob = new Blob([data.markdown], { type: 'text/markdown' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `NDS_Report_${new Date().toISOString()}.${format === 'markdown' ? 'md' : format}`;
+                a.click();
+            } else if (format === 'pdf') {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `NDS_Report_${new Date().toISOString()}.${format}`;
+                a.click();
+            }
+        } catch (err) {
+            alert(err.message || "Erreur lors de l'export.");
+        }
+    };
+
     return (
         <>
             <div className="page-header">
                 <div>
-                    <h2>Modèles AI</h2>
-                    <div className="subtitle">Gestion des modèles de Deep Learning</div>
+                    <h2>Reporting IA</h2>
+                    <div className="subtitle">Générer des rapports descriptifs de sécurité SOC par LLM</div>
                 </div>
             </div>
-            <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                <StatCard label="Modèle supervisé" value="MLP v1.0" icon={Zap} trend="Accuracy: 99.2%" variant="success" />
-                <StatCard label="Modèle non-supervisé" value="AE v1.0" icon={Eye} trend="Seuil: 0.0234" variant="" />
-                <StatCard label="Feedbacks en attente" value="47" icon={TrendingUp} trend="Prochain retrain: 53 restants" variant="warning" />
+
+            <div className="panel" style={{ marginBottom: '20px' }}>
+                <div className="panel-header">
+                    <h3><FileText size={16} /> Configuration du Rapport</h3>
+                </div>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Période (heures)</label>
+                        <select className="nav-item" style={{ width: '150px' }} value={period} onChange={(e) => setPeriod(e.target.value)}>
+                            <option value={24}>Dernières 24 Heures</option>
+                            <option value={168}>7 Jours (168h)</option>
+                            <option value={720}>30 Jours (720h)</option>
+                        </select>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Niveau de détail</label>
+                        <select className="nav-item" style={{ width: '150px' }} value={detailLevel} onChange={(e) => setDetailLevel(e.target.value)}>
+                            <option value="Technical">Technique / SOC</option>
+                            <option value="Executive">Exécutif / Managérial</option>
+                        </select>
+                    </div>
+                    <button className="nav-item" onClick={handleGenerate} disabled={loading} style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid #3b82f6', color: '#3b82f6' }}>
+                        {loading ? 'Analyse par le LLM...' : 'Générer Synthèse'}
+                    </button>
+                    {report && (
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                            <button className="nav-item" onClick={() => downloadFormat('pdf')}>Export PDF</button>
+                            <button className="nav-item" onClick={() => downloadFormat('markdown')}>Export MD</button>
+                            <button className="nav-item" onClick={() => downloadFormat('json')}>Export JSON</button>
+                        </div>
+                    )}
+                </div>
+                {error && <div style={{ color: '#ef4444', fontSize: '13px', marginTop: '10px' }}>{error}</div>}
             </div>
-            <div className="dashboard-grid">
-                <div className="panel">
+
+            {report && (
+                <div className="dashboard-grid">
+                    <div className="panel">
+                        <div className="panel-header">
+                            <h3><Target size={16} /> Threat Index Période</h3>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', height: '100%' }}>
+                            <ThreatScoreRing score={report.threat_index / 100} />
+                            <div>
+                                <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{report.threat_index}/100</div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Score algorithmique</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="panel">
+                        <div className="panel-header">
+                            <h3><TrendingUp size={16} /> Résumé Exécutif IA</h3>
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6' }}>
+                            {report.llm_analysis?.executive_summary || "Pas de résumé."}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {report && (
+                <div className="panel" style={{ marginTop: '20px' }}>
                     <div className="panel-header">
-                        <h3><Zap size={16} /> Architecture supervisée</h3>
+                        <h3><Zap size={16} /> Analyse Détaillée IA</h3>
                     </div>
-                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: 'var(--text-secondary)' }}>
-                        <strong style={{ color: 'var(--text-primary)' }}>MLP (Multi-Layer Perceptron)</strong><br />
-                        • Input → Dense(256, ReLU) → BN → Dropout(0.3)<br />
-                        • → Dense(128, ReLU) → BN → Dropout(0.3)<br />
-                        • → Dense(64, ReLU) → BN → Dropout(0.2)<br />
-                        • → Dense(n_classes, Softmax)<br /><br />
-                        <strong style={{ color: 'var(--text-primary)' }}>Métriques (v1.0.0)</strong><br />
-                        • Classes: DDoS, PortScan, BruteForce, DoS, Botnet, Web Attack, BENIGN<br />
-                        • F1-Score moyen: 0.987<br />
-                        • Entraîné sur CIC-IDS2017 + CIC-IDS2018
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        <div>
+                            <h4 style={{ marginBottom: '10px', color: 'var(--text-primary)' }}>Analyse Technique</h4>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{report.llm_analysis?.technical_analysis}</p>
+                        </div>
+                        <div>
+                            <h4 style={{ marginBottom: '10px', color: 'var(--text-primary)' }}>Comportement des Attaquants</h4>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{report.llm_analysis?.attacker_behavior}</p>
+                        </div>
                     </div>
-                </div>
-                <div className="panel">
-                    <div className="panel-header">
-                        <h3><Eye size={16} /> Autoencoder non-supervisé</h3>
-                    </div>
-                    <div style={{ padding: '20px', fontSize: '13px', lineHeight: '1.8', color: 'var(--text-secondary)' }}>
-                        <strong style={{ color: 'var(--text-primary)' }}>Dense Autoencoder</strong><br />
-                        • Encoder: Input → 64 → 32 → 16 → 8 (latent)<br />
-                        • Decoder: 8 → 16 → 32 → 64 → Output<br />
-                        • Loss: MSE (Mean Squared Error)<br /><br />
-                        <strong style={{ color: 'var(--text-primary)' }}>Détection d'anomalies</strong><br />
-                        • Seuil dynamique: μ + 3σ<br />
-                        • Calibré sur le percentile 99<br />
-                        • Détecte les attaques 0-day et comportements déviants
+                    <div style={{ marginTop: '20px', background: 'rgba(239, 68, 68, 0.05)', padding: '15px', borderRadius: '8px', borderLeft: '3px solid #ef4444' }}>
+                        <h4 style={{ marginBottom: '10px', color: 'var(--text-primary)' }}>Recommandations d'Action</h4>
+                        <ul style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', paddingLeft: '20px' }}>
+                            {Array.isArray(report.llm_analysis?.recommendations)
+                                ? report.llm_analysis.recommendations.map((r, i) => <li key={i}>{r}</li>)
+                                : <li>{report.llm_analysis?.recommendations}</li>}
+                        </ul>
                     </div>
                 </div>
-            </div>
+            )}
+
         </>
     )
 }
@@ -733,7 +843,7 @@ export default function App() {
             case 'alerts': return <AlertsView />
             case 'traffic': return <TrafficView />
             case 'map': return <MapView />
-            case 'models': return <ModelsView />
+            case 'reporting': return <ReportingView />
             case 'settings': return (
                 <div className="page-header">
                     <div>

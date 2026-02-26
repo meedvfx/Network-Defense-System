@@ -26,6 +26,7 @@ from backend.api.routes_geo import router as geo_router
 from backend.api.routes_dashboard import router as dashboard_router
 from backend.api.routes_models import router as models_router
 from backend.api.routes_feedback import router as feedback_router
+from backend.api.routes_reporting import router as reporting_router
 from backend.api.websocket_handler import websocket_endpoint
 
 settings = get_settings()
@@ -120,6 +121,7 @@ app.include_router(geo_router)
 app.include_router(dashboard_router)
 app.include_router(models_router)
 app.include_router(feedback_router)
+app.include_router(reporting_router)
 
 # ---- WebSocket ----
 app.websocket("/ws/alerts")(websocket_endpoint)
