@@ -1,333 +1,179 @@
-﻿# Network Defense System - Documentation Projet Complete
+﻿# 📚 Détails Techniques — Network Defense System
 
-## 1. Objectif du projet
+Documentation exhaustive de la stack technologique, des mécanismes de sécurité, des politiques de données, et des limites connues du projet.
 
-Network Defense System (NDS) est une plateforme SOC orientee detection d'intrusions reseau en quasi temps reel.
-Le systeme combine:
-- capture reseau
-- construction de flux et extraction de features
-- moteur IA hybride (supervise + non supervise + reputation IP)
-- backend FastAPI async
-- dashboard React/Vite
-- module de reporting intelligent base sur LLM
+---
 
-Le projet est en mode inference only: l'entrainement des modeles est externe (voir `docs/TRAINING_GUIDE.md`).
+## 1. Stack Technologique Complète
 
-## 2. Architecture globale
+### 1.1 Backend & API
 
-### 2.1 Couches techniques
-- Frontend: `dashboard/` (React 18 + Vite)
-- API backend: `backend/` (FastAPI)
-- Capture: `capture/` (Scapy + flow builder)
-- IA: `ai/` (chargement artefacts, preprocessing, inference)
-- Geolocalisation: `geo/`
-- Reporting: `reporting/` (metrics + tendances + LLM + export)
-- Monitoring: `monitoring/`
-- Donnees: PostgreSQL + Redis
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **FastAPI** | 0.129.1 | Framework API REST/WebSocket, OpenAPI auto-généré (Swagger + ReDoc) |
+| **Uvicorn** | 0.41.0 | Serveur ASGI haute performance |
+| **Pydantic** | 2.12.5 | Validation/sérialisation des schémas JSON entrées/sorties |
+| **pydantic-settings** | 2.13.1 | Chargement configuration depuis `.env` via `BaseSettings` |
+| **SlowAPI** | 0.1.9 | Rate limiting par IP (`get_remote_address`) — configurable via `RATE_LIMIT_PER_MINUTE` |
+| **python-dotenv** | 1.2.1 | Chargement `.env` pour `os.getenv()` (reporting/LLM) |
+| **python-multipart** | 0.0.22 | Support upload fichiers (forms multipart) |
 
-### 2.2 Orchestration runtime
-- `docker-compose.yml` demarre 3 services:
-  - `postgres` (postgres:16-alpine)
-  - `redis` (redis:7-alpine)
-  - `backend` (image construite via `Dockerfile`)
-- Le dashboard est lance localement via `npm run dev` (port 3000)
+### 1.2 Persistance & Cache
 
-## 3. Structure du depot
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **PostgreSQL** | 16-alpine | RDBMS principal — 7 tables, indexes composites, UUID PK, JSONB |
+| **SQLAlchemy** | 2.0.45 | ORM async avec `AsyncSession`, repository pattern (35+ fonctions) |
+| **asyncpg** | 0.31.0 | Driver PostgreSQL async natif (pool de connexions) |
+| **psycopg2-binary** | 2.9.11 | Driver sync (fallback migrations Alembic) |
+| **Redis** | 7.2.0 | Cache clé-valeur + compteurs métriques + Pub/Sub alertes + threat score global |
 
-```text
-Network-Defense-System/
-|- ai/
-|- backend/
-|- capture/
-|- dashboard/
-|- docs/
-|- geo/
-|- monitoring/
-|- reporting/
-|- docker-compose.yml
-|- Dockerfile
-|- requirements.txt
-|- README.md
+Redis est configuré en Docker avec : `--appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru`
+
+### 1.3 Intelligence Artificielle
+
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **TensorFlow** | 2.20.0 | Exécution des graphes Keras (forward pass uniquement, `compile=False`) |
+| **scikit-learn** | 1.7.1 | Artefacts de preprocessing chargés côté inférence (scaler, encoder, selector) |
+| **NumPy** | 2.2.6 | Calcul vectoriel (features, MSE reconstruction) |
+| **joblib** | 1.5.1 | Sérialisation/désérialisation des objets `.pkl` |
+
+### 1.4 Capture Réseau
+
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **Scapy** | 2.6.1 | Sniffing paquets IP/TCP/UDP, parsing bas-niveau, gestion interfaces |
+
+Dépendances système requises : `libpcap-dev`, `tcpdump` (Linux), **Npcap** (Windows)
+
+### 1.5 Frontend
+
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **React** | 18 | Framework UI avec composants functionnels |
+| **Vite** | 6.x | Build tool + dev server avec proxy `/api` et `/ws` |
+| **Recharts** | — | Graphiques SVG (timeline, distributions, camemberts) |
+| **React-Leaflet / Leaflet** | — | Carte interactive d'attaque mondiale |
+| **lucide-react** | — | Bibliothèque d'icônes |
+
+### 1.6 Reporting
+
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **openai** | 2.9.0 | Client SDK compatible OpenAI pour appels LLM (Groq, etc.) |
+| **httpx** | 0.28.1 | Client HTTP async pour appels Ollama (`/api/generate`) |
+| **fpdf2** | 2.8.6 | Génération de documents PDF depuis Markdown |
+
+### 1.7 Monitoring
+
+| Dépendance | Version | Rôle |
+|------------|---------|------|
+| **psutil** | 7.1.2 | Métriques système : CPU%, RAM, Disque, Uptime |
+
+---
+
+## 2. Mécanismes de Sécurité
+
+### 2.1 Authentification API Key
+
+Le header `X-API-Key` est vérifié par la dépendance `verify_api_key` dans `backend/core/security.py` :
+
+```python
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+    if not api_key or api_key != settings.api_key:
+        raise HTTPException(status_code=403, detail="Clé API invalide ou manquante.")
+    return api_key
 ```
 
-## 4. Stack technologique reelle
+**Périmètre actuel** : Seul le routeur `routes_reporting` utilise cette dépendance. Les autres routeurs sont ouverts.
 
-### 4.1 Backend/API
-- FastAPI 0.129.1
-- Uvicorn 0.41.0
-- Pydantic 2.12.5
-- SlowAPI (rate limiting)
+### 2.2 CORS (Cross-Origin Resource Sharing)
 
-### 4.2 Data
-- PostgreSQL 16
-- SQLAlchemy 2.0 async + asyncpg
-- Redis 7 (cache, metrics, pub/sub alertes)
+Configuration dans `get_cors_config()` :
+- **Origins autorisées** : `CORS_ORIGINS` (défaut : `http://localhost:5173,http://localhost:3000`)
+- **Credentials** : `True`
+- **Méthodes** : `["*"]` (toutes)
+- **Headers** : `["*"]` (tous)
 
-### 4.3 IA
-- TensorFlow 2.20
-- scikit-learn 1.7.1 (artefacts preprocessing)
-- NumPy + joblib
+### 2.3 Rate Limiting
 
-### 4.4 Capture reseau
-- Scapy 2.6.1
+SlowAPI avec `get_remote_address` comme clé — configurable via `RATE_LIMIT_PER_MINUTE` (défaut 60).
 
-### 4.5 Frontend
-- React 18
-- Vite 6
-- Recharts
-- React-Leaflet/Leaflet
-- lucide-react
+### 2.4 Validation des Features IA
 
-### 4.6 Reporting
-- httpx
-- openai SDK (mode provider compatible OpenAI)
-- fpdf2 (export PDF)
+Le `DataValidator` dans `ai/preprocessing/data_validator.py` vérifie :
+- Absence de NaN et Inf
+- Clipping des valeurs aberrantes (outliers)
+- Dimensions correctes du vecteur d'entrée
 
-## 5. Flux de donnees (end-to-end)
+---
 
-1. Capture paquets IP via `capture/packet_sniffer.py`
-2. Aggregation en flux bidirectionnels 5-tuple via `capture/flow_builder.py`
-3. Extraction de features CIC-compatibles via `capture/feature_extractor.py`
-4. Preprocessing (`ai/preprocessing/feature_pipeline.py`): validation -> scaling -> feature selection
-5. Inference:
-   - supervise (`ai/inference/supervised_predictor.py`)
-   - non supervise (`ai/inference/unsupervised_predictor.py`)
-6. Fusion hybride (`ai/inference/hybrid_decision_engine.py`)
-7. Persistance transactionnelle dans PostgreSQL:
-   - `network_flows`
-   - `predictions`
-   - `anomaly_scores`
-   - `alerts` (si decision != normal)
-8. Publication alerte via Redis pub/sub (`nds:alerts:realtime`)
-9. Exposition API pour dashboard, statistiques, geo, reporting
+## 3. Politique de Rétention des Données
 
-## 6. Pipeline IA detaille
+Le service `data_retention_service` est un scheduler lancé au `lifespan` de l'app :
 
-### 6.1 Artefacts attendus (`ai/artifacts/`)
-- `model_supervised.keras`
-- `model_unsupervised.keras`
-- `scaler.pkl`
-- `encoder.pkl`
-- `feature_selector.pkl`
-- `threshold_stats.pkl` (recommande)
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `RETENTION_ENABLED` | `true` | Active/désactive le nettoyage automatique |
+| `RETENTION_FLOWS_DAYS` | `30` | Conservation des flux en jours |
+| `RETENTION_RUN_INTERVAL_MINUTES` | `60` | Fréquence d'exécution |
+| `RETENTION_DELETE_BATCH_SIZE` | `5000` | Nombre de lignes supprimées par batch |
+| `RETENTION_KEEP_ALERTED_FLOWS` | `true` | Jamais supprimer les flux associés à une alerte |
 
-### 6.2 Logique de decision hybride
-- Poids par defaut (`ai/config/model_config.py`):
-  - supervise: 0.50
-  - non supervise: 0.30
-  - reputation IP: 0.20
-- Score final borne entre 0 et 1
-- Decisions possibles:
-  - `confirmed_attack`
-  - `suspicious`
-  - `unknown_anomaly`
-  - `normal`
+---
 
-### 6.3 Niveaux de severite
-Mappes via `severity_config`:
-- critical >= 0.85
-- high >= 0.65
-- medium >= 0.40
-- low < 0.40
+## 4. Géolocalisation IP
 
-## 7. Backend FastAPI
+### 4.1 Architecture (`geo/`)
 
-### 7.1 Fichiers clefs
-- App et lifecycle: `backend/main.py`
-- Config env: `backend/core/config.py`
-- API key + CORS + limiter: `backend/core/security.py`
-- Session DB async: `backend/database/connection.py`
-- Repository SQL: `backend/database/repository.py`
-- Client Redis: `backend/database/redis_client.py`
+| Fichier | Rôle |
+|---------|------|
+| `ip_resolver.py` | Classifie les IPs en privées/publiques/réservées, filtre les non-géolocalisables |
+| `geo_locator.py` | Appelle `ip-api.com` pour les IPs publiques, cache en mémoire + persistance PostgreSQL |
 
-### 7.2 Routes exposees
-- System:
-  - `GET /`
-  - `GET /health`
-  - `WS /ws/alerts`
-- Detection: prefix `/api/detection`
-  - `POST /analyze`
-  - `GET /status`
-  - `POST /capture/start`
-  - `POST /capture/stop`
-  - `GET /capture/status`
-  - `GET /capture/interfaces`
-  - `POST /capture/interface`
-- Alerts: prefix `/api/alerts`
-  - `GET /`
-  - `PATCH /{alert_id}/status`
-  - `GET /stats`
-  - `GET /top-ips`
-- Dashboard: prefix `/api/dashboard`
-  - `GET /overview`
-  - `GET /attack-distribution`
-  - `GET /top-threats`
-  - `GET /recent-alerts`
-  - `GET /metrics`
-  - `GET /traffic-timeseries`
-  - `GET /protocol-distribution`
-- Geo: prefix `/api/geo`
-  - `GET /locate/{ip}`
-  - `POST /locate-batch`
-  - `GET /attack-map`
-  - `GET /cached`
-- Models: prefix `/api/models`
-  - `GET /status`
-  - `GET /config`
-- Feedback: prefix `/api/feedback`
-  - `POST /`
-  - `GET /stats`
-  - `GET /unused`
-- Reporting: prefix `/api/reporting`
-  - `POST /generate`
-  - protege par `X-API-Key`
+### 4.2 Configuration
 
-## 8. Base de donnees
+- Provider : `GEOIP_PROVIDER` (défaut `ip-api`)
+- Cache TTL : `GEOIP_CACHE_TTL` (défaut 86400s = 24h)
+- API Key optionnelle : `GEOIP_API_KEY` (pour MaxMind ou plans payants)
 
-### 8.1 Tables principales
-- `network_flows`
-- `predictions`
-- `anomaly_scores`
-- `alerts`
-- `ip_geolocation`
-- `model_versions`
-- `feedback_labels`
+---
 
-### 8.2 Initialisation schema
-- Fichier SQL: `backend/database/migrations/initial_schema.sql`
-- Les tables sont creees aussi au demarrage via `Base.metadata.create_all` dans `init_db()`
+## 5. Lifecycle de l'Application
 
-## 9. Redis et temps reel
+Le `lifespan` dans `backend/main.py` exécute séquentiellement au démarrage :
 
-Usage Redis:
-- cache generique
-- compteurs metriques
-- score global de menace (`nds:threat_score`)
-- pub/sub alertes (`nds:alerts:realtime`)
+1. **`init_db()`** — Connexion PostgreSQL + création tables via `Base.metadata.create_all`
+2. **`get_redis().ping()`** — Vérification connectivité Redis
+3. **`data_retention_service.start_scheduler()`** — Lancement scheduler de nettoyage
 
-WebSocket backend:
-- `backend/api/websocket_handler.py`
-- diffuse les alertes recues depuis Redis vers les clients connectes
+À l'arrêt : `stop_scheduler()` → `close_db()` → `close_redis()`.
 
-## 10. Capture reseau
+---
 
-### 10.1 PacketSniffer
-- thread dedie
-- buffer circulaire (`deque`)
-- fallback capture en cas de probleme BPF/L2
-- extraction infos IP/TCP/UDP
+## 6. Limites Connues et Points d'Attention
 
-### 10.2 FlowBuilder
-- cle canonique 5-tuple independante du sens
-- timeout configurable (`capture_flow_timeout`)
-- fermeture forcee possible
+### 6.1 Sécurité
 
-### 10.3 FeatureExtractor
-- vecteur d'environ 80 features
-- compatible logique CIC
-- calcule stats tailles paquets, IAT, flags TCP, ratios et debits
+- ⚠️ L'authentification `X-API-Key` n'est appliquée **que** sur le routeur reporting
+- ⚠️ Pas de système RBAC/JWT — tout client ayant accès au réseau est admin
+- ⚠️ Le frontend n'envoie pas le header `X-API-Key` pour les appels reporting
 
-## 11. Geolocalisation
+### 6.2 Performance
 
-- Classification IP privee/publique: `geo/ip_resolver.py`
-- Provider par defaut: ip-api.com via `geo/geo_locator.py`
-- cache local in-memory dans `GeoLocator`
-- API geo ignore les IP non geolocalisables
+- Le `FeatureExtractor` fonctionne en mode synchrone (pas de batch GPU)
+- Le `raw_features` JSONB est persisté en `None` dans le flux principal (économie disque)
+- Le frontend utilise du polling API périodique, le WebSocket est configuré mais sous-utilisé côté React
 
-## 12. Reporting intelligent (LLM)
+### 6.3 Axes d'Amélioration
 
-Pipeline reporting (`reporting/`):
-1. `metrics_engine.py`
-2. `trend_analysis.py`
-3. `threat_index.py`
-4. `prompt_builder.py`
-5. `llm_engine.py`
-6. `report_formatter.py`
-7. `pdf_exporter.py`
-
-Export supporte:
-- `json`
-- `markdown`
-- `pdf`
-
-Providers LLM:
-- Ollama (par defaut)
-- provider compatible OpenAI (ex: Groq) via SDK `openai`
-
-## 13. Dashboard React
-
-### 13.1 Vues
-- Overview
-- Alertes
-- Trafic
-- Carte
-- Reporting
-- Settings (placeholder)
-
-### 13.2 Integrations API
-- base: `API_BASE = '/api'`
-- polling periodique (pas de client WebSocket implemente dans `App.jsx`)
-- reporting frontend appelle `/api/reporting/generate` sans header `X-API-Key`
-
-## 14. Configuration environnement
-
-Variables importantes (voir `backend/core/config.py` et `reporting/llm_engine.py`):
-- App: `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_HOST`, `APP_PORT`, `SECRET_KEY`
-- DB: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
-- Redis: `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`
-- Capture: `CAPTURE_INTERFACE`, `CAPTURE_BUFFER_SIZE`, `CAPTURE_FLOW_TIMEOUT`
-- Security: `API_KEY`, `CORS_ORIGINS`, `RATE_LIMIT_PER_MINUTE`
-- Retention: `RETENTION_*`
-- LLM: `LLM_PROVIDER`, `LLM_MODEL`, `OLLAMA_BASE_URL`, `<PROVIDER>_API_KEY`
-
-## 15. Lancement projet
-
-### 15.1 Backend + DB + Redis (Docker)
-```bash
-docker compose up --build -d
-docker compose ps
-```
-
-### 15.2 Frontend
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-### 15.3 URLs utiles
-- Dashboard: `http://localhost:3000`
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-- Health: `http://localhost:8000/health`
-
-## 16. Observabilite
-
-- Logging centralise: `monitoring/logger.py`
-- Metriques systeme (CPU/RAM/disk/uptime): `monitoring/metrics.py`
-- Healthcheck app: endpoint `/health`
-
-## 17. Limitations et points d'attention
-
-- Securite API globalement partielle: la protection `X-API-Key` est active surtout sur reporting.
-- Frontend reporting n'envoie pas de header `X-API-Key`.
-- `raw_features` est en pratique enregistre a `None` dans le flux principal.
-- Le frontend n'utilise pas actuellement le WebSocket `/ws/alerts` (polling API toutes les 5s).
-- L'entrainement modele est externe au runtime applicatif.
-
-## 18. Resume de README.md
-
-`README.md` presente deja une documentation tres complete du projet. En resume:
-- Le projet vise la detection d'intrusions reseau temps reel pour usage SOC.
-- L'architecture combine capture, IA hybride, persistance, dashboard et reporting LLM.
-- Le backend FastAPI expose des routes detection/alertes/dashboard/geo/models/feedback/reporting.
-- Les modeles IA ne sont pas entraines dans l'application: il faut deposer les artefacts dans `ai/artifacts/`.
-- Le demarrage recommande est Docker Compose pour backend + PostgreSQL + Redis, puis lancement du dashboard via Vite.
-- Le README decrit aussi les flux de donnees, la stack, les variables d'environnement, les limitations et la documentation complementaire.
-
-## 19. Documentation complementaire
-
-- `README.md`
-- `docs/PROBLEM_STATEMENT.md`
-- `docs/TRAINING_GUIDE.md`
-- `docs/USER_GUIDE.md`
+| Domaine | Proposition |
+|---------|-------------|
+| **Authz** | Implémenter JWT/OAuth2 avec RBAC (rôles analyste/admin/viewer) |
+| **Tests** | Ajouter tests d'intégration API/DB/Redis/WS (pytest-asyncio) |
+| **MLOps** | Versionning modèle automatique, validation artefacts en CI/CD |
+| **Frontend** | Exploiter pleinement le WebSocket au lieu du polling |
+| **Monitoring** | Intégrer Prometheus + Grafana pour les métriques `SystemMetrics` |
