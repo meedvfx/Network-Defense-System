@@ -235,38 +235,40 @@ function TrafficChart({ data }) {
 
     return (
         <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={data} margin={{ top: 8, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                     <linearGradient id="gradNormal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#4f8ef7" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#4f8ef7" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#4f8ef7" stopOpacity={0.45} />
+                        <stop offset="100%" stopColor="#4f8ef7" stopOpacity={0.01} />
                     </linearGradient>
                     <linearGradient id="gradAttack" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f87171" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#f87171" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#f87171" stopOpacity={0.4} />
+                        <stop offset="100%" stopColor="#f87171" stopOpacity={0.01} />
                     </linearGradient>
                     <linearGradient id="gradSusp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.25} />
-                        <stop offset="100%" stopColor="#fbbf24" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#fbbf24" stopOpacity={0.01} />
                     </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                 <Tooltip
                     contentStyle={{
                         background: 'var(--bg-card)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
                         fontSize: '12px',
                         color: 'var(--text-primary)',
-                        boxShadow: 'var(--shadow-md)',
+                        boxShadow: 'var(--shadow-lg)',
+                        padding: '10px 14px',
                     }}
+                    cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
                 />
-                <Area type="monotone" dataKey="normal"     stroke="#4f8ef7" fill="url(#gradNormal)" strokeWidth={2} name="Normal" />
-                <Area type="monotone" dataKey="suspicious" stroke="#fbbf24" fill="url(#gradSusp)"   strokeWidth={2} strokeDasharray="5 5" name="Suspect" />
-                <Area type="monotone" dataKey="attacks"    stroke="#f87171" fill="url(#gradAttack)" strokeWidth={2} name="Attaques" />
-                <Legend iconType="circle" />
+                <Area type="monotone" dataKey="normal"     stroke="#4f8ef7" fill="url(#gradNormal)" strokeWidth={2.5} name="Normal" dot={false} activeDot={{ r: 4 }} />
+                <Area type="monotone" dataKey="suspicious" stroke="#fbbf24" fill="url(#gradSusp)"   strokeWidth={2}   strokeDasharray="5 4" name="Suspect" dot={false} activeDot={{ r: 4 }} />
+                <Area type="monotone" dataKey="attacks"    stroke="#f87171" fill="url(#gradAttack)" strokeWidth={2.5} name="Attaques" dot={false} activeDot={{ r: 4 }} />
+                <Legend iconType="circle" iconSize={8} />
             </AreaChart>
         </ResponsiveContainer>
     )
@@ -282,7 +284,7 @@ function AttackDistribution({ data }) {
     return (
         <ResponsiveContainer width="100%" height={280}>
             <PieChart>
-                <Pie data={data} cx="50%" cy="45%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
+                <Pie data={data} cx="50%" cy="45%" innerRadius={58} outerRadius={90} paddingAngle={3} dataKey="value" strokeWidth={0}>
                     {data.map((entry, i) => (
                         <Cell key={i} fill={entry.color} stroke="none" />
                     ))}
@@ -291,9 +293,10 @@ function AttackDistribution({ data }) {
                     contentStyle={{
                         background: 'var(--bg-card)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
                         fontSize: '12px',
-                        boxShadow: 'var(--shadow-md)',
+                        boxShadow: 'var(--shadow-lg)',
+                        padding: '10px 14px',
                     }}
                 />
                 <Legend verticalAlign="bottom" iconType="circle" iconSize={8} />
@@ -313,12 +316,16 @@ const attackIcon = L.divIcon({
 })
 
 function AttackMap({ markers }) {
+    const { theme } = useTheme()
+    const tileUrl = theme === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
     const validMarkers = markers.filter(m => m.lat != null && m.lng != null)
     return (
         <div className="map-container">
-            <MapContainer center={[20, 0]} zoom={2} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
+            <MapContainer key={theme} center={[20, 0]} zoom={2} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
                 <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    url={tileUrl}
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com">CARTO</a>'
                 />
                 {validMarkers.map((m, i) => (
@@ -769,13 +776,14 @@ function TrafficView() {
                     {Array.isArray(protocols) && protocols.some((p) => Number(p?.count || 0) > 0) ? (
                         <ResponsiveContainer width="100%" height={250}>
                             <BarChart data={protocols} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                                <YAxis tick={{ fontSize: 11 }} />
+                                <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                                <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                                 <Tooltip
-                                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', boxShadow: 'var(--shadow-md)' }}
+                                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', padding: '10px 14px' }}
+                                    cursor={{ fill: 'var(--chart-grid)' }}
                                 />
-                                <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Flux">
+                                <Bar dataKey="count" radius={[5, 5, 0, 0]} name="Flux" maxBarSize={48}>
                                     {protocols.map((_, i) => (
                                         <Cell key={i} fill={ATTACK_COLORS[i % ATTACK_COLORS.length]} />
                                     ))}
