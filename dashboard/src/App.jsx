@@ -3,7 +3,8 @@ import {
     Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings,
     Radio, Target, TrendingUp, Zap, Eye, Clock, FileText,
     ChevronLeft, ChevronRight, Menu, X, Sun, Moon,
-    Download, RefreshCw, Wifi, WifiOff, Database, Layers
+    Download, RefreshCw, Wifi, WifiOff, Database, Layers,
+    Cpu, CheckCircle, XCircle, HardDrive, Play, Loader, Link2, AlertOctagon, Info
 } from 'lucide-react'
 import {
     AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -388,6 +389,7 @@ function Sidebar({ activeView, setActiveView, collapsed, setCollapsed, captureRu
         { id: 'traffic',    label: 'Trafic réseau',        icon: Activity,   group: 'ANALYSE' },
         { id: 'map',        label: 'Carte des attaques',   icon: Globe,      group: 'ANALYSE' },
         { id: 'reporting',  label: 'Reporting IA',         icon: FileText,   group: 'RAPPORTS' },
+        { id: 'ai-models', label: 'AI Models',             icon: Cpu,        group: 'SYSTÈME' },
         { id: 'settings',   label: 'Paramètres',           icon: Settings,   group: 'SYSTÈME' },
     ]
 
@@ -1074,6 +1076,484 @@ function ReportingView() {
 }
 
 // ========================================
+// AI Models View — diagnostic complet des modèles IA
+// ========================================
+function AIModelsView() {
+    const [filesData, setFilesData] = useState(null)
+    const [loadingData, setLoadingData] = useState(null)
+    const [compatData, setCompatData] = useState(null)
+    const [inferenceResult, setInferenceResult] = useState(null)
+    const [isLoading, setIsLoading] = useState(true)
+    const [isRunningTest, setIsRunningTest] = useState(false)
+    const [lastRefresh, setLastRefresh] = useState(null)
+
+    const loadHealthcheck = useCallback(async () => {
+        setIsLoading(true)
+        const full = await fetchAPI('/models/healthcheck/full', null)
+        if (full) {
+            setFilesData(full.files)
+            setLoadingData(full.loading)
+            setCompatData(full.compatibility)
+        }
+        setLastRefresh(new Date())
+        setIsLoading(false)
+    }, [])
+
+    useEffect(() => { loadHealthcheck() }, [loadHealthcheck])
+
+    const runInferenceTest = async () => {
+        setIsRunningTest(true)
+        setInferenceResult(null)
+        const result = await fetchAPI('/models/healthcheck/inference', null, { method: 'POST' })
+        setInferenceResult(result)
+        setIsRunningTest(false)
+    }
+
+    const StatusIcon = ({ ok, warning }) => {
+        if (ok) return <CheckCircle size={16} color="#34d399" />
+        if (warning) return <AlertTriangle size={16} color="#fbbf24" />
+        return <XCircle size={16} color="#f87171" />
+    }
+
+    const StatusBadge = ({ status, label }) => {
+        const colors = {
+            pass: { bg: 'rgba(52,211,153,0.12)', color: '#34d399', border: 'rgba(52,211,153,0.3)' },
+            success: { bg: 'rgba(52,211,153,0.12)', color: '#34d399', border: 'rgba(52,211,153,0.3)' },
+            loaded: { bg: 'rgba(52,211,153,0.12)', color: '#34d399', border: 'rgba(52,211,153,0.3)' },
+            found: { bg: 'rgba(52,211,153,0.12)', color: '#34d399', border: 'rgba(52,211,153,0.3)' },
+            fail: { bg: 'rgba(248,113,113,0.12)', color: '#f87171', border: 'rgba(248,113,113,0.3)' },
+            error: { bg: 'rgba(248,113,113,0.12)', color: '#f87171', border: 'rgba(248,113,113,0.3)' },
+            missing: { bg: 'rgba(248,113,113,0.12)', color: '#f87171', border: 'rgba(248,113,113,0.3)' },
+            warning: { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: 'rgba(251,191,36,0.3)' },
+            skipped: { bg: 'rgba(107,114,128,0.12)', color: '#9ca3af', border: 'rgba(107,114,128,0.3)' },
+        }
+        const c = colors[status] || colors.skipped
+        return (
+            <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 10px', borderRadius: 'var(--radius-pill)',
+                background: c.bg, border: `1px solid ${c.border}`,
+                fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', color: c.color,
+                textTransform: 'uppercase',
+            }}>
+                {label || status}
+            </span>
+        )
+    }
+
+    // Summary stats
+    const totalFiles = filesData?.total_artifacts || 0
+    const foundFiles = filesData?.found_count || 0
+    const allLoaded = loadingData?.all_loaded || false
+    const isCompatible = compatData?.compatible || false
+    const overallHealthy = filesData?.all_required_present && allLoaded && isCompatible
+
+    return (
+        <>
+            {/* Page Header */}
+            <div className="page-header">
+                <div className="page-title-block">
+                    <h2>AI Models</h2>
+                    <div className="subtitle">
+                        <Cpu size={13} /> Diagnostic et vérification des modèles IA
+                    </div>
+                </div>
+                <div className="header-actions">
+                    <button className="btn btn-ghost" onClick={loadHealthcheck} disabled={isLoading}>
+                        <RefreshCw size={14} className={isLoading ? 'spin' : ''} /> Rafraîchir
+                    </button>
+                    {lastRefresh && (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Dernière vérif : {lastRefresh.toLocaleTimeString('fr-FR')}
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            {/* Overall Status Cards */}
+            <div className="stats-grid">
+                <StatCard
+                    label="Fichiers modèles"
+                    value={`${foundFiles}/${totalFiles}`}
+                    icon={HardDrive}
+                    trend={filesData?.all_required_present ? 'Tous les requis présents' : `${filesData?.missing_required?.length || 0} requis manquant(s)`}
+                    trendDir={filesData?.all_required_present ? 'down' : 'up'}
+                    variant={filesData?.all_required_present ? 'success' : 'danger'}
+                    delay={0}
+                />
+                <StatCard
+                    label="Chargement runtime"
+                    value={allLoaded ? 'OK' : 'Erreur'}
+                    icon={Database}
+                    trend={allLoaded ? 'Tous les composants chargés' : `${Object.keys(loadingData?.errors || {}).length} erreur(s)`}
+                    trendDir={allLoaded ? 'down' : 'up'}
+                    variant={allLoaded ? 'success' : 'danger'}
+                    delay={0.05}
+                />
+                <StatCard
+                    label="Compatibilité"
+                    value={isCompatible ? 'OK' : 'Problème'}
+                    icon={Link2}
+                    trend={isCompatible ? 'Pipeline cohérent' : `${compatData?.errors?.length || 0} incompatibilité(s)`}
+                    trendDir={isCompatible ? 'down' : 'up'}
+                    variant={isCompatible ? 'success' : 'danger'}
+                    delay={0.1}
+                />
+                <StatCard
+                    label="Santé globale"
+                    value={overallHealthy ? 'Healthy' : 'Unhealthy'}
+                    icon={overallHealthy ? Shield : AlertOctagon}
+                    trend={overallHealthy ? 'Système IA opérationnel' : 'Diagnostic nécessaire'}
+                    variant={overallHealthy ? 'success' : 'danger'}
+                    delay={0.15}
+                />
+            </div>
+
+            {/* Section 1 : Fichiers modèles */}
+            <div className="panel" style={{ marginBottom: 'var(--grid-gap)' }}>
+                <div className="panel-header">
+                    <div className="panel-title">
+                        <div className="panel-title-icon"><HardDrive size={14} /></div>
+                        Vérification des fichiers modèles
+                    </div>
+                    <StatusBadge
+                        status={filesData?.all_required_present ? 'pass' : 'fail'}
+                        label={filesData?.all_required_present ? 'Complet' : 'Incomplet'}
+                    />
+                </div>
+                {filesData?.artifacts ? (
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fichier</th>
+                                <th>Description</th>
+                                <th>Statut</th>
+                                <th>Taille</th>
+                                <th>Dernière modification</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filesData.artifacts.map((artifact, i) => (
+                                <tr key={i}>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <StatusIcon ok={artifact.found} />
+                                            <span className="font-mono" style={{ fontSize: '12px', fontWeight: 600 }}>
+                                                {artifact.name}
+                                            </span>
+                                            {artifact.required && (
+                                                <span style={{
+                                                    fontSize: '9px', padding: '1px 5px', borderRadius: 4,
+                                                    background: 'rgba(79,142,247,0.12)', color: '#4f8ef7',
+                                                    fontWeight: 700, letterSpacing: '0.5px',
+                                                }}>REQUIS</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{artifact.description}</td>
+                                    <td><StatusBadge status={artifact.found ? 'found' : 'missing'} label={artifact.found ? 'Found' : 'Missing'} /></td>
+                                    <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>{artifact.size_formatted || '—'}</td>
+                                    <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{artifact.last_modified || '—'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <ChartEmptyState message={isLoading ? 'Chargement...' : 'Aucune donnée disponible.'} />
+                )}
+                {filesData?.artifacts_dir && (
+                    <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <Info size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                        Répertoire des artifacts : <span className="font-mono">{filesData.artifacts_dir}</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Section 2 : Chargement runtime */}
+            <div className="panel" style={{ marginBottom: 'var(--grid-gap)' }}>
+                <div className="panel-header">
+                    <div className="panel-title">
+                        <div className="panel-title-icon"><Database size={14} /></div>
+                        Vérification chargement runtime
+                    </div>
+                    <StatusBadge
+                        status={allLoaded ? 'pass' : 'fail'}
+                        label={allLoaded ? 'Tous chargés' : 'Erreurs'}
+                    />
+                </div>
+                {loadingData?.components ? (
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                <th>Composant</th>
+                                <th>Statut</th>
+                                <th>Temps de chargement</th>
+                                <th>Type / Shape</th>
+                                <th>Erreur</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(loadingData.components).map(([key, comp]) => (
+                                <tr key={key}>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <StatusIcon ok={comp.loaded} warning={comp.status === 'missing'} />
+                                            <span className="font-mono" style={{ fontSize: '12px', fontWeight: 600 }}>{key}</span>
+                                        </div>
+                                    </td>
+                                    <td><StatusBadge status={comp.status} /></td>
+                                    <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                                        {comp.load_time_ms != null ? `${comp.load_time_ms} ms` : '—'}
+                                    </td>
+                                    <td style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                        {comp.object_type || comp.input_shape || '—'}
+                                        {comp.param_count != null && (
+                                            <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
+                                                ({comp.param_count.toLocaleString()} params)
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td style={{ fontSize: '11px', color: '#f87171', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {comp.error || '—'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <ChartEmptyState message={isLoading ? 'Chargement...' : 'Aucune donnée disponible.'} />
+                )}
+            </div>
+
+            {/* Section 3 : Test d'inférence */}
+            <div className="panel" style={{ marginBottom: 'var(--grid-gap)' }}>
+                <div className="panel-header">
+                    <div className="panel-title">
+                        <div className="panel-title-icon"><Play size={14} /></div>
+                        Test d'inférence
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {inferenceResult && (
+                            <StatusBadge
+                                status={inferenceResult.success ? 'success' : 'error'}
+                                label={inferenceResult.success ? 'Réussi' : 'Échoué'}
+                            />
+                        )}
+                        <button className="btn btn-primary" onClick={runInferenceTest} disabled={isRunningTest}>
+                            {isRunningTest ? (
+                                <><Loader size={14} className="spin" /> Test en cours...</>
+                            ) : (
+                                <><Play size={14} /> Run Test</>
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                {inferenceResult ? (
+                    <div style={{ display: 'grid', gap: 'var(--grid-gap)' }}>
+                        {/* Pipeline result */}
+                        {inferenceResult.pipeline_test && (
+                            <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                    <StatusIcon ok={inferenceResult.pipeline_test.status === 'success'} />
+                                    <span style={{ fontWeight: 700, fontSize: '13px' }}>Pipeline Preprocessing</span>
+                                    {inferenceResult.pipeline_test.time_ms != null && (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                            {inferenceResult.pipeline_test.time_ms} ms
+                                        </span>
+                                    )}
+                                </div>
+                                {inferenceResult.pipeline_test.status === 'success' && (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', gap: 20 }}>
+                                        <span>Input: <strong className="font-mono">{JSON.stringify(inferenceResult.pipeline_test.input_shape)}</strong></span>
+                                        <span>→</span>
+                                        <span>Output: <strong className="font-mono">{JSON.stringify(inferenceResult.pipeline_test.output_shape)}</strong></span>
+                                    </div>
+                                )}
+                                {inferenceResult.pipeline_test.error && (
+                                    <div style={{ fontSize: '12px', color: '#f87171' }}>{inferenceResult.pipeline_test.error}</div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Supervised result */}
+                        {inferenceResult.supervised_test && (
+                            <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                    <StatusIcon ok={inferenceResult.supervised_test.status === 'success'} warning={inferenceResult.supervised_test.status === 'missing'} />
+                                    <span style={{ fontWeight: 700, fontSize: '13px' }}>Modèle Supervisé (Classification)</span>
+                                    {inferenceResult.supervised_test.time_ms != null && (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                            {inferenceResult.supervised_test.time_ms} ms
+                                        </span>
+                                    )}
+                                </div>
+                                {inferenceResult.supervised_test.status === 'success' && (
+                                    <div style={{ display: 'flex', gap: 24, fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                        <span>Classe prédite: <strong style={{ color: '#4f8ef7' }}>{inferenceResult.supervised_test.class_label}</strong></span>
+                                        <span>Confiance: <strong className="font-mono">{(inferenceResult.supervised_test.confidence * 100).toFixed(2)}%</strong></span>
+                                        <span>Classes: <strong className="font-mono">{inferenceResult.supervised_test.num_classes}</strong></span>
+                                        <span>Output shape: <strong className="font-mono">{JSON.stringify(inferenceResult.supervised_test.output_shape)}</strong></span>
+                                    </div>
+                                )}
+                                {inferenceResult.supervised_test.error && (
+                                    <div style={{ fontSize: '12px', color: '#f87171' }}>{inferenceResult.supervised_test.error}</div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Unsupervised result */}
+                        {inferenceResult.unsupervised_test && (
+                            <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                    <StatusIcon ok={inferenceResult.unsupervised_test.status === 'success'} warning={inferenceResult.unsupervised_test.status === 'missing'} />
+                                    <span style={{ fontWeight: 700, fontSize: '13px' }}>Modèle Non-Supervisé (Autoencoder)</span>
+                                    {inferenceResult.unsupervised_test.time_ms != null && (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                            {inferenceResult.unsupervised_test.time_ms} ms
+                                        </span>
+                                    )}
+                                </div>
+                                {inferenceResult.unsupervised_test.status === 'success' && (
+                                    <div style={{ display: 'flex', gap: 24, fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                        <span>Erreur reconstruction: <strong className="font-mono">{inferenceResult.unsupervised_test.reconstruction_error?.toExponential(4)}</strong></span>
+                                        {inferenceResult.unsupervised_test.threshold != null && (
+                                            <span>Seuil: <strong className="font-mono">{inferenceResult.unsupervised_test.threshold?.toExponential(4)}</strong></span>
+                                        )}
+                                        {inferenceResult.unsupervised_test.is_anomaly != null && (
+                                            <span>Anomalie: <StatusBadge status={inferenceResult.unsupervised_test.is_anomaly ? 'warning' : 'pass'} label={inferenceResult.unsupervised_test.is_anomaly ? 'Oui' : 'Non'} /></span>
+                                        )}
+                                    </div>
+                                )}
+                                {inferenceResult.unsupervised_test.error && (
+                                    <div style={{ fontSize: '12px', color: '#f87171' }}>{inferenceResult.unsupervised_test.error}</div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Global info */}
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: '11px', color: 'var(--text-muted)', paddingTop: 4 }}>
+                            <span>Temps total : <strong className="font-mono">{inferenceResult.total_time_ms} ms</strong></span>
+                            {inferenceResult.error && (
+                                <span style={{ color: '#f87171' }}>
+                                    <AlertTriangle size={12} style={{ verticalAlign: 'middle' }} /> {inferenceResult.error}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <Play size={32} style={{ opacity: 0.3, marginBottom: 8 }} />
+                        <div style={{ fontSize: '13px' }}>
+                            Cliquez sur <strong>Run Test</strong> pour envoyer des données fictives aux modèles et vérifier l'inférence.
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Section 4 : Compatibilité */}
+            <div className="panel">
+                <div className="panel-header">
+                    <div className="panel-title">
+                        <div className="panel-title-icon"><Link2 size={14} /></div>
+                        Vérification de compatibilité
+                    </div>
+                    <StatusBadge
+                        status={isCompatible ? 'pass' : 'fail'}
+                        label={isCompatible ? 'Compatible' : 'Incompatible'}
+                    />
+                </div>
+                {compatData?.checks ? (
+                    <>
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Vérification</th>
+                                    <th>Statut</th>
+                                    <th>Détail</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {compatData.checks.map((check, i) => (
+                                    <tr key={i}>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <StatusIcon ok={check.status === 'pass'} warning={check.status === 'warning' || check.status === 'skipped'} />
+                                                <span className="font-mono" style={{ fontSize: '12px' }}>{check.check}</span>
+                                            </div>
+                                        </td>
+                                        <td><StatusBadge status={check.status} /></td>
+                                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: 500 }}>{check.detail}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        {/* Dimensions summary */}
+                        {compatData.dimensions && Object.keys(compatData.dimensions).length > 0 && (
+                            <div style={{ marginTop: 16, padding: 14, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '12px', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
+                                    Dimensions du pipeline
+                                </div>
+                                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: '12px' }}>
+                                    {Object.entries(compatData.dimensions)
+                                        .filter(([k]) => k !== 'class_names')
+                                        .map(([key, value]) => (
+                                            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span style={{ color: 'var(--text-muted)' }}>{key.replace(/_/g, ' ')}:</span>
+                                                <strong className="font-mono" style={{ color: 'var(--accent-primary)' }}>{String(value)}</strong>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                                {compatData.dimensions.class_names && (
+                                    <div style={{ marginTop: 10, fontSize: '11px', color: 'var(--text-muted)' }}>
+                                        Classes : {compatData.dimensions.class_names.map((name, i) => (
+                                            <span key={i} style={{
+                                                display: 'inline-block', padding: '2px 8px', margin: '2px 3px',
+                                                borderRadius: 'var(--radius-pill)', background: 'var(--bg-card)',
+                                                border: '1px solid var(--border-color)', fontFamily: 'var(--font-mono)',
+                                                fontSize: '10px',
+                                            }}>{name}</span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Errors & Warnings */}
+                        {compatData.errors?.length > 0 && (
+                            <div className="info-message error" style={{ marginTop: 12 }}>
+                                <AlertTriangle size={14} />
+                                <div>
+                                    <strong>Erreurs de compatibilité :</strong>
+                                    <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                        {compatData.errors.map((err, i) => <li key={i}>{err}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+                        {compatData.warnings?.length > 0 && (
+                            <div className="info-message info" style={{ marginTop: 8 }}>
+                                <Info size={14} />
+                                <div>
+                                    <strong>Avertissements :</strong>
+                                    <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                        {compatData.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <ChartEmptyState message={isLoading ? 'Chargement...' : 'Aucune donnée de compatibilité.'} />
+                )}
+            </div>
+        </>
+    )
+}
+
+// ========================================
 // Settings View
 // ========================================
 function SettingsView() {
@@ -1303,6 +1783,7 @@ export default function App() {
             case 'traffic':   return <TrafficView />
             case 'map':       return <MapView />
             case 'reporting': return <ReportingView />
+            case 'ai-models': return <AIModelsView />
             case 'settings':  return <SettingsView />
             default:          return <DashboardOverview />
         }
