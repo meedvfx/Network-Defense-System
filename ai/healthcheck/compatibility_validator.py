@@ -88,24 +88,25 @@ def validate_compatibility() -> Dict[str, Any]:
                     "detail": f"Feature selector chargé — {selector_n_features_in} → {selector_n_features_out} features",
                 })
 
-                # Pipeline : scale → select — selector input doit correspondre à scaler input
-                if scaler_n_features and selector_n_features_in:
-                    if selector_n_features_in == scaler_n_features:
+                # Pipeline correct : select → scale
+                # Vérifier que la sortie du selector correspond à l'entrée du scaler
+                if scaler_n_features is not None and selector_n_features_out is not None:
+                    if selector_n_features_out == scaler_n_features:
                         result["checks"].append({
                             "check": "scaler_selector_compatibility",
                             "status": "pass",
-                            "detail": f"Scaler ({scaler_n_features}) → Selector ({selector_n_features_in}) : compatible",
+                            "detail": f"Selector ({selector_n_features_in}→{selector_n_features_out}) → Scaler ({scaler_n_features}) : compatible",
                         })
                     else:
-                        result["warnings"].append(
-                            f"Scaler attend {scaler_n_features} features, selector attend {selector_n_features_in} — "
-                            f"vérifiez l'ordre du pipeline d'entraînement"
+                        result["errors"].append(
+                            f"Incompatibilité selector→scaler : sortie selector ({selector_n_features_out}) ≠ entrée scaler ({scaler_n_features})"
                         )
+                        result["compatible"] = False
                         result["checks"].append({
                             "check": "scaler_selector_compatibility",
-                            "status": "warning",
-                            "detail": f"Scaler attend {scaler_n_features} features, selector attend {selector_n_features_in}. "
-                            f"Le pipeline peut fonctionner si l'ordre d'entraînement diffère (select → scale).",
+                            "status": "fail",
+                            "detail": f"Sortie selector ({selector_n_features_out}) ≠ entrée scaler ({scaler_n_features}) — "
+                            f"les artifacts ne sont pas cohérents entre eux.",
                         })
             except Exception as e:
                 result["warnings"].append(f"Erreur chargement feature selector : {e}")
@@ -379,24 +380,25 @@ def validate_compatibility_light() -> Dict[str, Any]:
                     "detail": f"Feature selector chargé — {selector_n_features_in} → {selector_n_features_out} features",
                 })
 
-                # Pipeline : scale → select — selector input doit correspondre à scaler input
-                if scaler_n_features and selector_n_features_in:
-                    if selector_n_features_in == scaler_n_features:
+                # Pipeline correct : select → scale
+                # Vérifier que la sortie du selector correspond à l'entrée du scaler
+                if scaler_n_features is not None and selector_n_features_out is not None:
+                    if selector_n_features_out == scaler_n_features:
                         result["checks"].append({
                             "check": "scaler_selector_compatibility",
                             "status": "pass",
-                            "detail": f"Scaler ({scaler_n_features}) → Selector ({selector_n_features_in}) : compatible",
+                            "detail": f"Selector ({selector_n_features_in}→{selector_n_features_out}) → Scaler ({scaler_n_features}) : compatible",
                         })
                     else:
-                        result["warnings"].append(
-                            f"Scaler attend {scaler_n_features} features, selector attend {selector_n_features_in} — "
-                            f"vérifiez l'ordre du pipeline d'entraînement"
+                        result["errors"].append(
+                            f"Incompatibilité selector→scaler : sortie selector ({selector_n_features_out}) ≠ entrée scaler ({scaler_n_features})"
                         )
+                        result["compatible"] = False
                         result["checks"].append({
                             "check": "scaler_selector_compatibility",
-                            "status": "warning",
-                            "detail": f"Scaler attend {scaler_n_features} features, selector attend {selector_n_features_in}. "
-                            f"Le pipeline peut fonctionner si l'ordre d'entraînement diffère (select → scale).",
+                            "status": "fail",
+                            "detail": f"Sortie selector ({selector_n_features_out}) ≠ entrée scaler ({scaler_n_features}) — "
+                            f"les artifacts ne sont pas cohérents entre eux.",
                         })
             except Exception as e:
                 result["warnings"].append(f"Erreur chargement feature selector : {e}")
