@@ -59,7 +59,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./ai/artifacts:/app/ai/artifacts
+      - ./ai:/app/ai
+      - ./backend:/app/backend
+      - ./capture:/app/capture
+      - ./geo:/app/geo
+      - ./monitoring:/app/monitoring
+      - ./reporting:/app/reporting
       - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
