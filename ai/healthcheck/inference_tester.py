@@ -104,10 +104,14 @@ def test_loading() -> Dict[str, Any]:
     results["feature_selector"] = _try_load_pickle(artifact_paths.feature_selector)
 
     all_loaded = all(r["loaded"] for r in results.values())
+    loaded_count = sum(1 for r in results.values() if r["loaded"])
+    total_count = len(results)
     errors = {k: v["error"] for k, v in results.items() if v["error"]}
 
     return {
         "all_loaded": all_loaded,
+        "loaded_count": loaded_count,
+        "total_count": total_count,
         "components": results,
         "errors": errors if errors else None,
     }
@@ -151,10 +155,20 @@ def test_loading_pickle_only() -> Dict[str, Any]:
     results["feature_selector"] = _try_load_pickle(artifact_paths.feature_selector)
 
     all_loaded = all(r["loaded"] for r in results.values())
+    pickle_keys = {"scaler", "encoder", "feature_selector"}
+    keras_keys = {"model_supervised", "model_unsupervised"}
+    pickle_all_loaded = all(r["loaded"] for k, r in results.items() if k in pickle_keys)
+    keras_all_found = all(r["loaded"] for k, r in results.items() if k in keras_keys)
+    loaded_count = sum(1 for r in results.values() if r["loaded"])
+    total_count = len(results)
     errors = {k: v["error"] for k, v in results.items() if v["error"]}
 
     return {
         "all_loaded": all_loaded,
+        "pickle_all_loaded": pickle_all_loaded,
+        "keras_all_found": keras_all_found,
+        "loaded_count": loaded_count,
+        "total_count": total_count,
         "components": results,
         "errors": errors if errors else None,
     }
