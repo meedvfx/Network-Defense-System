@@ -1199,6 +1199,7 @@ body {
 .fade-in  { animation: fadeIn  0.35s ease both; }
 .slide-in { animation: slideIn 0.3s ease both; }
 .scale-in { animation: scaleIn 0.25s ease both; }
+.spin     { animation: spin 0.7s linear infinite; }
 
 .spinner {
   display: inline-block;
