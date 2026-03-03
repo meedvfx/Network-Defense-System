@@ -82,14 +82,21 @@ class FeaturePipeline:
             else:
                 logger.warning(f"⚠ Encoder introuvable : {encoder_path} (optionnel)")
 
-            # 4. Déduire les dimensions d'entrée et de sortie attendues
-            # Utile pour le débogage et la validation.
-            if hasattr(self.scaler, 'n_features_in_'):
-                self._n_features_in = self.scaler.n_features_in_
-            if self.feature_selector and hasattr(self.feature_selector, 'n_features_'):
-                self._n_features_out = self.feature_selector.n_features_
+            # 4. Déduire les dimensions d'entrée et de sortie attendues.
+            # Ordre entraînement : raw (N) → SelectKBest (N→K) → StandardScaler (K→K)
+            # _n_features_in  = nombre de features brutes attendues en entrée du pipeline
+            # _n_features_out = nombre de features après toutes les transformations
+            if self.feature_selector and hasattr(self.feature_selector, 'n_features_in_'):
+                # Le selector reçoit les données brutes
+                self._n_features_in = self.feature_selector.n_features_in_
             elif hasattr(self.scaler, 'n_features_in_'):
+                self._n_features_in = self.scaler.n_features_in_
+
+            if hasattr(self.scaler, 'n_features_in_'):
+                # Le scaler s'applique après la sélection → sa sortie = sortie finale
                 self._n_features_out = self.scaler.n_features_in_
+            elif self.feature_selector and hasattr(self.feature_selector, 'n_features_'):
+                self._n_features_out = self.feature_selector.n_features_
 
             self._is_loaded = True
             logger.info(
@@ -143,21 +150,24 @@ class FeaturePipeline:
         # 1. Validation et nettoyage des données brutes
         cleaned = self.validator.validate_strict(features)
 
-        # 2. Application du Scaler (Normalisation) — AVANT la sélection
-        # Le scaler a été entraîné sur TOUTES les features brutes.
-        # Le feature selector a été entraîné sur les features SCALÉES.
-        # Ordre correct : scale → select (cohérent avec le pipeline d'entraînement).
-        try:
-            cleaned = self.scaler.transform(cleaned)
-        except Exception as e:
-            raise RuntimeError(f"Erreur de scaling : {e}. Vérifiez que le nombre de features correspond à l'entraînement.")
-
-        # 3. Application du Feature Selector (si disponible) — APRÈS le scaling
+        # 2. Application du Feature Selector (si disponible) — AVANT le scaling
+        # Ordre d'entraînement : raw (78) → SelectKBest (78→50) → StandardScaler (50→50)
+        # Le selector a été entraîné sur les données brutes → doit s'appliquer en premier.
         if self.feature_selector is not None:
             try:
                 cleaned = self.feature_selector.transform(cleaned)
             except Exception as e:
-                logger.warning(f"Feature selection échouée, utilisation des features scalées : {e}")
+                raise RuntimeError(
+                    f"Erreur de sélection de features : {e}. "
+                    f"Vérifiez que les données d'entrée ont {self._n_features_in} features."
+                )
+
+        # 3. Application du Scaler (Normalisation) — APRÈS la sélection
+        # Le scaler a été entraîné sur les features déjà sélectionnées.
+        try:
+            cleaned = self.scaler.transform(cleaned)
+        except Exception as e:
+            raise RuntimeError(f"Erreur de scaling : {e}. Vérifiez que le nombre de features correspond à l'entraînement.")
 
         # Conversion explicite en float32 pour optimiser l'inférence TensorFlow
         return cleaned.astype(np.float32)

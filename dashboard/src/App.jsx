@@ -1145,8 +1145,40 @@ function AIModelsView() {
     const totalFiles = filesData?.total_artifacts || 0
     const foundFiles = filesData?.found_count || 0
     const allLoaded = loadingData?.all_loaded || false
+    const pickleLoaded = loadingData?.pickle_all_loaded || false
+    const loadedCount = loadingData?.loaded_count || 0
+    const loadedTotal = loadingData?.total_count || 0
     const isCompatible = compatData?.compatible || false
+    const pickleCompatible = compatData?.pickle_compatible || false
     const overallHealthy = filesData?.all_required_present && allLoaded && isCompatible
+    const partialReady = pickleLoaded && pickleCompatible
+
+    // Determine loading card status
+    const loadingVariant = allLoaded ? 'success' : pickleLoaded ? 'warning' : 'danger'
+    const loadingValue = allLoaded ? 'OK' : pickleLoaded ? `${loadedCount}/${loadedTotal}` : 'Erreur'
+    const loadingTrend = allLoaded
+        ? 'Tous les composants chargés'
+        : pickleLoaded
+            ? `Preprocessing OK — ${loadedTotal - loadedCount} modèle(s) Keras manquant(s)`
+            : `${Object.keys(loadingData?.errors || {}).length} erreur(s)`
+
+    // Determine compat card status
+    const compatVariant = isCompatible ? 'success' : pickleCompatible ? 'warning' : 'danger'
+    const compatValue = isCompatible ? 'OK' : pickleCompatible ? 'Partiel' : 'Problème'
+    const compatTrend = isCompatible
+        ? 'Pipeline cohérent'
+        : pickleCompatible
+            ? 'Pickle OK — modèles Keras manquants'
+            : `${compatData?.errors?.length || 0} incompatibilité(s)`
+
+    // Determine overall status
+    const overallVariant = overallHealthy ? 'success' : partialReady ? 'warning' : 'danger'
+    const overallValue = overallHealthy ? 'Healthy' : partialReady ? 'Partiel' : 'Unhealthy'
+    const overallTrend = overallHealthy
+        ? 'Système IA opérationnel'
+        : partialReady
+            ? 'Preprocessing intégré — modèles Keras requis'
+            : 'Diagnostic nécessaire'
 
     return (
         <>
@@ -1177,34 +1209,34 @@ function AIModelsView() {
                     value={`${foundFiles}/${totalFiles}`}
                     icon={HardDrive}
                     trend={filesData?.all_required_present ? 'Tous les requis présents' : `${filesData?.missing_required?.length || 0} requis manquant(s)`}
-                    trendDir={filesData?.all_required_present ? 'down' : 'up'}
-                    variant={filesData?.all_required_present ? 'success' : 'danger'}
+                    trendDir={filesData?.all_required_present ? 'down' : foundFiles > 0 ? 'neutral' : 'up'}
+                    variant={filesData?.all_required_present ? 'success' : foundFiles > 0 ? 'warning' : 'danger'}
                     delay={0}
                 />
                 <StatCard
                     label="Chargement runtime"
-                    value={allLoaded ? 'OK' : 'Erreur'}
+                    value={loadingValue}
                     icon={Database}
-                    trend={allLoaded ? 'Tous les composants chargés' : `${Object.keys(loadingData?.errors || {}).length} erreur(s)`}
-                    trendDir={allLoaded ? 'down' : 'up'}
-                    variant={allLoaded ? 'success' : 'danger'}
+                    trend={loadingTrend}
+                    trendDir={allLoaded ? 'down' : pickleLoaded ? 'neutral' : 'up'}
+                    variant={loadingVariant}
                     delay={0.05}
                 />
                 <StatCard
                     label="Compatibilité"
-                    value={isCompatible ? 'OK' : 'Problème'}
+                    value={compatValue}
                     icon={Link2}
-                    trend={isCompatible ? 'Pipeline cohérent' : `${compatData?.errors?.length || 0} incompatibilité(s)`}
-                    trendDir={isCompatible ? 'down' : 'up'}
-                    variant={isCompatible ? 'success' : 'danger'}
+                    trend={compatTrend}
+                    trendDir={isCompatible ? 'down' : pickleCompatible ? 'neutral' : 'up'}
+                    variant={compatVariant}
                     delay={0.1}
                 />
                 <StatCard
                     label="Santé globale"
-                    value={overallHealthy ? 'Healthy' : 'Unhealthy'}
-                    icon={overallHealthy ? Shield : AlertOctagon}
-                    trend={overallHealthy ? 'Système IA opérationnel' : 'Diagnostic nécessaire'}
-                    variant={overallHealthy ? 'success' : 'danger'}
+                    value={overallValue}
+                    icon={overallHealthy ? Shield : partialReady ? AlertTriangle : AlertOctagon}
+                    trend={overallTrend}
+                    variant={overallVariant}
                     delay={0.15}
                 />
             </div>
@@ -1217,8 +1249,8 @@ function AIModelsView() {
                         Vérification des fichiers modèles
                     </div>
                     <StatusBadge
-                        status={filesData?.all_required_present ? 'pass' : 'fail'}
-                        label={filesData?.all_required_present ? 'Complet' : 'Incomplet'}
+                        status={filesData?.all_required_present ? 'pass' : foundFiles > 0 ? 'warning' : 'fail'}
+                        label={filesData?.all_required_present ? 'Complet' : foundFiles > 0 ? `${foundFiles}/${totalFiles} trouvés` : 'Incomplet'}
                     />
                 </div>
                 {filesData?.artifacts ? (
@@ -1277,8 +1309,8 @@ function AIModelsView() {
                         Vérification chargement runtime
                     </div>
                     <StatusBadge
-                        status={allLoaded ? 'pass' : 'fail'}
-                        label={allLoaded ? 'Tous chargés' : 'Erreurs'}
+                        status={allLoaded ? 'pass' : pickleLoaded ? 'warning' : 'fail'}
+                        label={allLoaded ? 'Tous chargés' : pickleLoaded ? `${loadedCount}/${loadedTotal} chargés` : 'Erreurs'}
                     />
                 </div>
                 {loadingData?.components ? (
@@ -1459,8 +1491,8 @@ function AIModelsView() {
                         Vérification de compatibilité
                     </div>
                     <StatusBadge
-                        status={isCompatible ? 'pass' : 'fail'}
-                        label={isCompatible ? 'Compatible' : 'Incompatible'}
+                        status={isCompatible ? 'pass' : pickleCompatible ? 'warning' : 'fail'}
+                        label={isCompatible ? 'Compatible' : pickleCompatible ? 'Partiel' : 'Incompatible'}
                     />
                 </div>
                 {compatData?.checks ? (
@@ -1478,7 +1510,7 @@ function AIModelsView() {
                                     <tr key={i}>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <StatusIcon ok={check.status === 'pass'} warning={check.status === 'warning' || check.status === 'skipped'} />
+                                                <StatusIcon ok={check.status === 'pass'} warning={check.status === 'warning' || check.status === 'skipped' || check.status === 'missing'} />
                                                 <span className="font-mono" style={{ fontSize: '12px' }}>{check.check}</span>
                                             </div>
                                         </td>

@@ -104,10 +104,14 @@ def test_loading() -> Dict[str, Any]:
     results["feature_selector"] = _try_load_pickle(artifact_paths.feature_selector)
 
     all_loaded = all(r["loaded"] for r in results.values())
+    loaded_count = sum(1 for r in results.values() if r["loaded"])
+    total_count = len(results)
     errors = {k: v["error"] for k, v in results.items() if v["error"]}
 
     return {
         "all_loaded": all_loaded,
+        "loaded_count": loaded_count,
+        "total_count": total_count,
         "components": results,
         "errors": errors if errors else None,
     }
@@ -151,10 +155,20 @@ def test_loading_pickle_only() -> Dict[str, Any]:
     results["feature_selector"] = _try_load_pickle(artifact_paths.feature_selector)
 
     all_loaded = all(r["loaded"] for r in results.values())
+    pickle_keys = {"scaler", "encoder", "feature_selector"}
+    keras_keys = {"model_supervised", "model_unsupervised"}
+    pickle_all_loaded = all(r["loaded"] for k, r in results.items() if k in pickle_keys)
+    keras_all_found = all(r["loaded"] for k, r in results.items() if k in keras_keys)
+    loaded_count = sum(1 for r in results.values() if r["loaded"])
+    total_count = len(results)
     errors = {k: v["error"] for k, v in results.items() if v["error"]}
 
     return {
         "all_loaded": all_loaded,
+        "pickle_all_loaded": pickle_all_loaded,
+        "keras_all_found": keras_all_found,
+        "loaded_count": loaded_count,
+        "total_count": total_count,
         "components": results,
         "errors": errors if errors else None,
     }
@@ -205,24 +219,30 @@ def test_inference() -> Dict[str, Any]:
         if artifact_paths.encoder.exists():
             encoder = joblib.load(str(artifact_paths.encoder))
 
-        # 2. Déterminer le nombre de features attendues par le scaler
-        n_features_in = getattr(scaler, 'n_features_in_', None)
-        if n_features_in is None:
-            result["error"] = "Impossible de déterminer le nombre de features attendu par le scaler"
+        # 2. Déterminer le nombre de features brutes attendues en entrée du pipeline
+        # Ordre : select → scale
+        # Si un selector existe, il reçoit les données brutes (n_features_in_ du selector)
+        # Sinon, c'est le scaler qui reçoit les données brutes.
+        if feature_selector is not None:
+            n_features_raw = getattr(feature_selector, 'n_features_in_', None)
+        else:
+            n_features_raw = getattr(scaler, 'n_features_in_', None)
+
+        if n_features_raw is None:
+            result["error"] = "Impossible de déterminer le nombre de features attendu par le pipeline"
             return result
 
-        # 3. Générer des données fictives
-        dummy_features = np.random.randn(1, n_features_in).astype(np.float32)
+        # 3. Générer des données fictives (dimensions brutes)
+        dummy_features = np.random.randn(1, n_features_raw).astype(np.float32)
 
-        # 4. Tester le pipeline de preprocessing
+        # 4. Tester le pipeline de preprocessing (ordre correct : select → scale)
         pipeline_result = {"status": "not_tested"}
         try:
             start = time.time()
-            scaled = scaler.transform(dummy_features)
+            processed = dummy_features.copy()
             if feature_selector is not None:
-                processed = feature_selector.transform(scaled)
-            else:
-                processed = scaled
+                processed = feature_selector.transform(processed)
+            processed = scaler.transform(processed)
             processed = processed.astype(np.float32)
             pipeline_elapsed = (time.time() - start) * 1000
             pipeline_result = {
