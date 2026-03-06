@@ -5,8 +5,7 @@ import {
     ChevronLeft, ChevronRight, Menu, X, Sun, Moon,
     Download, RefreshCw, Wifi, WifiOff, Database, Layers,
     Cpu, CheckCircle, XCircle, HardDrive, Play, Loader, Link2, AlertOctagon, Info,
-    Key, Lock, Bot, Sliders, ChevronDown, ChevronUp, Save, TestTube, ExternalLink,
-    Thermometer, Hash, Server
+    Key, Lock, Bot, ChevronDown, ChevronUp, Save, TestTube, ExternalLink, Server
 } from 'lucide-react'
 import {
     AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -941,8 +940,6 @@ function ReportingView() {
     const [apiKey, setApiKey]                 = useState('')
     const [maskedKey, setMaskedKey]           = useState('')
     const [hasStoredKey, setHasStoredKey]     = useState(false)
-    const [temperature, setTemperature]       = useState(0.2)
-    const [maxTokens, setMaxTokens]           = useState(2048)
     const [ollamaUrl, setOllamaUrl]           = useState('http://localhost:11434/api')
     const [availableModels, setAvailableModels] = useState([])
     const [providerDescriptions, setProviderDescriptions] = useState({})
@@ -954,8 +951,6 @@ function ReportingView() {
                 if (!data) return
                 setProvider(data.provider || 'ollama')
                 setModel(data.model || 'llama3')
-                setTemperature(data.temperature ?? 0.2)
-                setMaxTokens(data.max_tokens ?? 2048)
                 setOllamaUrl(data.ollama_base_url || 'http://localhost:11434/api')
                 setHasStoredKey(data.has_api_key || false)
                 setMaskedKey(data.masked_api_key || '')
@@ -990,8 +985,8 @@ function ReportingView() {
                 provider,
                 model,
                 api_key: apiKey || maskedKey,   // maskedKey keeps existing key if no new one entered
-                temperature,
-                max_tokens: maxTokens,
+                temperature: 0.2,
+                max_tokens: 2048,
                 ollama_base_url: ollamaUrl,
             }
             const res = await fetch(`${API_BASE}/reporting/llm-config`, {
@@ -1151,25 +1146,24 @@ function ReportingView() {
                         {/* Model selection */}
                         <div className="llm-section">
                             <div className="llm-section-title"><Cpu size={13} /> Modèle</div>
-                            <div className="llm-row">
+                            {availableModels.length > 0 ? (
                                 <select
                                     className="form-select"
-                                    value={model}
+                                    value={availableModels.includes(model) ? model : availableModels[0]}
                                     onChange={(e) => setModel(e.target.value)}
-                                    style={{ flex: 1 }}
                                 >
                                     {availableModels.map(m => (
                                         <option key={m} value={m}>{m}</option>
                                     ))}
                                 </select>
+                            ) : (
                                 <input
                                     className="form-input"
                                     value={model}
                                     onChange={(e) => setModel(e.target.value)}
-                                    placeholder="Ou saisissez un nom de modèle…"
-                                    style={{ flex: 1 }}
+                                    placeholder="Nom du modèle (ex: llama3, gpt-4o)…"
                                 />
-                            </div>
+                            )}
                         </div>
 
                         {/* API Key (cloud only) */}
@@ -1209,43 +1203,6 @@ function ReportingView() {
                                 />
                             </div>
                         )}
-
-                        {/* Advanced parameters */}
-                        <div className="llm-section">
-                            <div className="llm-section-title"><Sliders size={13} /> Paramètres avancés</div>
-                            <div className="llm-params-grid">
-                                <div className="llm-param-group">
-                                    <label className="llm-param-label">
-                                        <Thermometer size={12} /> Température
-                                        <span className="llm-param-value">{temperature.toFixed(1)}</span>
-                                    </label>
-                                    <input
-                                        type="range" min="0" max="2" step="0.1"
-                                        value={temperature}
-                                        onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                                        className="llm-slider"
-                                    />
-                                    <div className="llm-slider-labels">
-                                        <span>Précis (0)</span><span>Créatif (2)</span>
-                                    </div>
-                                </div>
-                                <div className="llm-param-group">
-                                    <label className="llm-param-label">
-                                        <Hash size={12} /> Tokens max
-                                        <span className="llm-param-value">{maxTokens}</span>
-                                    </label>
-                                    <input
-                                        type="range" min="256" max="8192" step="256"
-                                        value={maxTokens}
-                                        onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                                        className="llm-slider"
-                                    />
-                                    <div className="llm-slider-labels">
-                                        <span>256</span><span>8192</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
                         {/* Test connection + status */}
                         <div className="llm-section">
