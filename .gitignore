@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.env
+
+# Sensitive config — LLM API keys stored server-side
+backend/.llm_config.json
+
+# Logs
+logs/
+*.log
+
+# Node / Frontend
+dashboard/node_modules/
+dashboard/dist/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI model artifacts (large binaries)
+ai/artifacts/*.pkl
+ai/artifacts/*.joblib
+ai/artifacts/*.model
+models/
