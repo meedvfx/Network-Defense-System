@@ -884,15 +884,44 @@ function MapView() {
 }
 
 // ========================================
-// ========================================
 // LLM Provider Card
 // ========================================
 const LLM_PROVIDER_META = {
-    openai:   { color: '#10b981', label: 'ChatGPT (OpenAI)',      icon: '🤖', badge: 'Cloud' },
-    deepseek: { color: '#6366f1', label: 'DeepSeek',              icon: '🔷', badge: 'Cloud' },
-    gemini:   { color: '#f59e0b', label: 'Google Gemini',         icon: '✨', badge: 'Cloud' },
-    groq:     { color: '#f97316', label: 'Groq (Ultra-rapide)',   icon: '⚡', badge: 'Cloud' },
-    ollama:   { color: '#34d399', label: 'Ollama (Local)',         icon: '🏠', badge: 'Local' },
+    openai: {
+        color: '#10b981', label: 'ChatGPT (OpenAI)', icon: '🤖', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+        description: 'Modèles GPT d\'OpenAI. Puissants et polyvalents. Idéal pour l\'analyse SOC approfondie.',
+        docUrl: 'https://platform.openai.com/api-keys',
+    },
+    deepseek: {
+        color: '#6366f1', label: 'DeepSeek', icon: '🔷', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['deepseek-chat', 'deepseek-reasoner'],
+        description: 'Modèle open-source de DeepSeek. Excellent rapport qualité/prix, faible coût par token.',
+        docUrl: 'https://platform.deepseek.com/api_keys',
+    },
+    gemini: {
+        color: '#f59e0b', label: 'Google Gemini', icon: '✨', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+        description: 'Modèle multimodal de Google. Grande fenêtre de contexte. Tier gratuit disponible.',
+        docUrl: 'https://aistudio.google.com/app/apikey',
+    },
+    groq: {
+        color: '#f97316', label: 'Groq (Ultra-rapide)', icon: '⚡', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['llama-3.3-70b-versatile', 'llama3-70b-8192', 'mixtral-8x7b-32768'],
+        description: 'Inférence ultra-rapide grâce aux puces LPU de Groq. Tier gratuit très généreux.',
+        docUrl: 'https://console.groq.com/keys',
+    },
+    ollama: {
+        color: '#34d399', label: 'Ollama (Local)', icon: '🏠', badge: 'Local',
+        requiresApiKey: false,
+        models: ['llama3.1', 'llama3', 'mistral', 'mixtral', 'phi3', 'gemma2', 'codellama'],
+        description: 'Modèles open-source exécutés localement. Gratuit, privé, aucune donnée envoyée en ligne.',
+        docUrl: 'https://ollama.ai',
+    },
 }
 
 function ProviderCard({ id, meta, selected, onClick }) {
@@ -935,47 +964,46 @@ function ReportingView() {
     const [testStatus, setTestStatus]         = useState(null)   // {success, message}
     const [testLoading, setTestLoading]       = useState(false)
 
-    const [provider, setProvider]             = useState('ollama')
-    const [model, setModel]                   = useState('llama3')
-    const [apiKey, setApiKey]                 = useState('')
-    const [maskedKey, setMaskedKey]           = useState('')
-    const [hasStoredKey, setHasStoredKey]     = useState(false)
-    const [ollamaUrl, setOllamaUrl]           = useState('http://localhost:11434/api')
-    const [availableModels, setAvailableModels] = useState([])
-    const [providerDescriptions, setProviderDescriptions] = useState({})
+    const [provider, setProvider]   = useState('ollama')
+    const [model, setModel]         = useState('llama3')
+    const [apiKey, setApiKey]       = useState('')
+    const [maskedKey, setMaskedKey] = useState('')
+    const [hasStoredKey, setHasStoredKey] = useState(false)
+    const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434/api')
+
+    // Derived — always from the static frontend meta, no backend dependency
+    const availableModels = LLM_PROVIDER_META[provider]?.models ?? []
+    const requiresApiKey  = LLM_PROVIDER_META[provider]?.requiresApiKey ?? true
 
     // ── Load stored config on mount ───────────────────────────────
     useEffect(() => {
         fetchAPI('/reporting/llm-config', null)
             .then((data) => {
                 if (!data) return
-                setProvider(data.provider || 'ollama')
-                setModel(data.model || 'llama3')
+                const savedProvider = data.provider || 'ollama'
+                const providerMeta  = LLM_PROVIDER_META[savedProvider]
+                const savedModel    = data.model || (providerMeta?.models?.[0] ?? '')
+                setProvider(savedProvider)
+                // Only keep saved model if it belongs to that provider's list
+                setModel(
+                    providerMeta?.models?.includes(savedModel)
+                        ? savedModel
+                        : (providerMeta?.models?.[0] ?? savedModel)
+                )
                 setOllamaUrl(data.ollama_base_url || 'http://localhost:11434/api')
                 setHasStoredKey(data.has_api_key || false)
                 setMaskedKey(data.masked_api_key || '')
-                if (data.providers) {
-                    setProviderDescriptions(data.providers)
-                    // Set available models for current provider
-                    setAvailableModels(data.providers[data.provider]?.models || [])
-                }
             })
             .finally(() => setConfigLoading(false))
     }, [])
 
-    // Update available models when provider changes
-    useEffect(() => {
-        if (providerDescriptions[provider]) {
-            const models = providerDescriptions[provider].models || []
-            setAvailableModels(models)
-            // Auto-select first model if current model not valid for this provider
-            if (models.length && !models.includes(model)) {
-                setModel(models[0])
-            }
-        }
-    }, [provider, providerDescriptions])
-
-    const requiresApiKey = providerDescriptions[provider]?.requires_api_key ?? (provider !== 'ollama')
+    // When user picks a different provider, auto-select its first model
+    const handleProviderChange = (newProvider) => {
+        setProvider(newProvider)
+        setTestStatus(null)
+        const firstModel = LLM_PROVIDER_META[newProvider]?.models?.[0] ?? ''
+        setModel(firstModel)
+    }
 
     // ── Save config ───────────────────────────────────────────────
     const handleSaveConfig = async () => {
@@ -1078,7 +1106,6 @@ function ReportingView() {
     }
 
     const currentProviderMeta = LLM_PROVIDER_META[provider] || LLM_PROVIDER_META.ollama
-    const currentProviderInfo = providerDescriptions[provider]
 
     return (
         <>
@@ -1128,14 +1155,14 @@ function ReportingView() {
                             <div className="llm-section-title"><Bot size={13} /> Fournisseur LLM</div>
                             <div className="llm-provider-grid">
                                 {Object.entries(LLM_PROVIDER_META).map(([id, meta]) => (
-                                    <ProviderCard key={id} id={id} meta={meta} selected={provider} onClick={setProvider} />
+                                    <ProviderCard key={id} id={id} meta={meta} selected={provider} onClick={handleProviderChange} />
                                 ))}
                             </div>
-                            {currentProviderInfo && (
+                            {currentProviderMeta?.description && (
                                 <div className="llm-provider-desc">
-                                    <Info size={12} /> {currentProviderInfo.description}
-                                    {currentProviderInfo.doc_url && (
-                                        <a href={currentProviderInfo.doc_url} target="_blank" rel="noreferrer" className="llm-doc-link">
+                                    <Info size={12} /> {currentProviderMeta.description}
+                                    {currentProviderMeta.docUrl && (
+                                        <a href={currentProviderMeta.docUrl} target="_blank" rel="noreferrer" className="llm-doc-link">
                                             <ExternalLink size={11} /> Obtenir une clé
                                         </a>
                                     )}
@@ -1146,24 +1173,15 @@ function ReportingView() {
                         {/* Model selection */}
                         <div className="llm-section">
                             <div className="llm-section-title"><Cpu size={13} /> Modèle</div>
-                            {availableModels.length > 0 ? (
-                                <select
-                                    className="form-select"
-                                    value={availableModels.includes(model) ? model : availableModels[0]}
-                                    onChange={(e) => setModel(e.target.value)}
-                                >
-                                    {availableModels.map(m => (
-                                        <option key={m} value={m}>{m}</option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <input
-                                    className="form-input"
-                                    value={model}
-                                    onChange={(e) => setModel(e.target.value)}
-                                    placeholder="Nom du modèle (ex: llama3, gpt-4o)…"
-                                />
-                            )}
+                            <select
+                                className="form-select"
+                                value={model}
+                                onChange={(e) => setModel(e.target.value)}
+                            >
+                                {availableModels.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* API Key (cloud only) */}
@@ -1231,7 +1249,7 @@ function ReportingView() {
                                 </button>
                             </div>
 
-                            {testStatus && (
+                            {testStatus?.message && (
                                 <div className={`llm-test-status ${testStatus.success ? 'success' : 'error'}`}>
                                     {testStatus.success
                                         ? <CheckCircle size={14} />
