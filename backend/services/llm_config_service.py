@@ -2,17 +2,27 @@
 Service de configuration LLM sécurisé.
 Gère le stockage et la récupération de la configuration LLM côté serveur.
 La clé API n'est jamais exposée côté frontend.
+Fallback : si .llm_config.json absent, lit les variables d'environnement (.env).
 """
 
 import json
 import logging
+import os
 from typing import Any, Dict, Optional
 from pathlib import Path
 
 logger = logging.getLogger("NDS.LLMConfig")
 
-# Fichier de configuration stocké côté serveur (hors du dépôt git si ajouté au .gitignore)
+# Fichier de configuration stocké côté serveur (hors du dépôt git)
 CONFIG_FILE = Path(__file__).parent.parent / ".llm_config.json"
+
+# Clés d'environnement par provider (compatibilité .env)
+_ENV_API_KEY_MAP: Dict[str, str] = {
+    "openai":   "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "gemini":   "GEMINI_API_KEY",
+    "groq":     "GROQ_API_KEY",
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Référentiel des fournisseurs LLM supportés
@@ -70,17 +80,46 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
+def _env_api_key(provider: str) -> str:
+    """Récupère la clé API depuis les variables d'environnement pour un provider donné."""
+    env_var = _ENV_API_KEY_MAP.get(provider.lower(), "")
+    return os.getenv(env_var, "") if env_var else ""
+
+
 def load_config() -> Dict[str, Any]:
-    """Charge la configuration LLM depuis le fichier de stockage."""
+    """
+    Charge la configuration LLM dans cet ordre de priorité :
+    1. Fichier .llm_config.json (configuré via l'UI)
+    2. Variables d'environnement (.env) — fallback
+    3. Valeurs par défaut
+    """
+    # Construire la base depuis les variables d'environnement
+    env_provider = os.getenv("LLM_PROVIDER", "").lower().strip()
+    env_model    = os.getenv("LLM_MODEL", "").strip()
+
+    base = DEFAULT_CONFIG.copy()
+    if env_provider and env_provider in PROVIDERS:
+        base["provider"] = env_provider
+        env_key = _env_api_key(env_provider)
+        if env_key:
+            base["api_key"] = env_key
+    if env_model:
+        base["model"] = env_model
+
+    # Charger et merger le fichier JSON (priorité sur .env)
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Merge avec les valeurs par défaut pour les nouveaux champs
-            return {**DEFAULT_CONFIG, **data}
+                stored = json.load(f)
+            merged = {**base, **stored}
+            # Si la clé stockée est vide, utiliser celle du .env
+            if not merged.get("api_key"):
+                merged["api_key"] = base.get("api_key", "")
+            return merged
         except Exception as e:
             logger.error(f"Erreur lecture config LLM: {e}")
-    return DEFAULT_CONFIG.copy()
+
+    return base
 
 
 def save_config(config: Dict[str, Any]) -> bool:

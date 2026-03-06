@@ -4,15 +4,15 @@ Inclut la génération de rapports et la gestion de la configuration LLM.
 """
 
 import os
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 from backend.database.connection import get_db
-from backend.core.security import verify_api_key
 from reporting.report_controller import ReportingController
 from backend.services.llm_config_service import (
     get_public_config,
@@ -24,7 +24,6 @@ from reporting.llm_engine import test_llm_connection
 router = APIRouter(
     prefix="/api/reporting",
     tags=["Reporting"],
-    dependencies=[Depends(verify_api_key)],
     responses={404: {"description": "Non trouvé"}},
 )
 

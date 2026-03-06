@@ -1009,10 +1009,11 @@ function ReportingView() {
     const handleSaveConfig = async () => {
         setSavingConfig(true); setConfigSaved(false); setTestStatus(null)
         try {
+            const effectiveKey = apiKey.trim() || maskedKey
             const payload = {
                 provider,
                 model,
-                api_key: apiKey || maskedKey,   // maskedKey keeps existing key if no new one entered
+                api_key: effectiveKey,
                 temperature: 0.2,
                 max_tokens: 2048,
                 ollama_base_url: ollamaUrl,
@@ -1023,7 +1024,7 @@ function ReportingView() {
                 body: JSON.stringify(payload),
             })
             const data = await res.json()
-            if (!res.ok) throw new Error(data.detail || 'Erreur sauvegarde')
+            if (!res.ok) throw new Error(data.detail || `Erreur HTTP ${res.status}`)
             setHasStoredKey(data.has_api_key || false)
             setMaskedKey(data.masked_api_key || '')
             setApiKey('')   // clear plain-text field after save
@@ -1040,10 +1041,13 @@ function ReportingView() {
     const handleTestConnection = async () => {
         setTestLoading(true); setTestStatus(null)
         try {
+            // If user typed a new key use it directly; otherwise send masked key
+            // so the backend resolves it to the stored one
+            const effectiveKey = apiKey.trim() || maskedKey
             const payload = {
                 provider,
                 model,
-                api_key: apiKey || maskedKey,
+                api_key: effectiveKey,
                 ollama_base_url: ollamaUrl,
             }
             const res = await fetch(`${API_BASE}/reporting/test-connection`, {
@@ -1052,7 +1056,12 @@ function ReportingView() {
                 body: JSON.stringify(payload),
             })
             const data = await res.json()
-            setTestStatus(data)
+            if (!res.ok) {
+                // FastAPI errors come as {detail: "..."}
+                setTestStatus({ success: false, message: data.detail || `Erreur HTTP ${res.status}` })
+            } else {
+                setTestStatus(data)
+            }
         } catch (err) {
             setTestStatus({ success: false, message: 'Impossible de joindre le backend.' })
         } finally {
