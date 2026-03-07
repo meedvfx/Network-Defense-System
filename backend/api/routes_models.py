@@ -153,8 +153,15 @@ async def full_healthcheck() -> Dict[str, Any]:
         and compat_result.get("compatible", False)
     )
 
+    # Partial readiness: pickle artifacts are loaded even if keras models are missing
+    pickle_ready = (
+        loading_result.get("pickle_all_loaded", False)
+        and compat_result.get("pickle_compatible", False)
+    )
+
     return {
         "overall_healthy": overall_healthy,
+        "pickle_ready": pickle_ready,
         "files": files_result,
         "loading": loading_result,
         "compatibility": compat_result,

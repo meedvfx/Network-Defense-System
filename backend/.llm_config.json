@@ -1,0 +1,8 @@
+{
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile",
+  "api_key": "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",
+  "temperature": 0.2,
+  "max_tokens": 2048,
+  "ollama_base_url": "http://localhost:11434/api"
+}
