@@ -8,7 +8,7 @@ Fallback : si .llm_config.json absent, lit les variables d'environnement (.env).
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from pathlib import Path
 
 logger = logging.getLogger("NDS.LLMConfig")
@@ -177,8 +177,3 @@ def get_public_config() -> Dict[str, Any]:
         "ollama_base_url": cfg.get("ollama_base_url", DEFAULT_CONFIG["ollama_base_url"]),
         "providers": PROVIDERS,
     }
-
-
-def get_provider_info(provider_id: str) -> Optional[Dict[str, Any]]:
-    """Retourne les informations d'un fournisseur LLM."""
-    return PROVIDERS.get(provider_id)

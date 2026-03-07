@@ -39,14 +39,6 @@ class Settings(BaseSettings):
         """
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
-    @property
-    def database_url_sync(self) -> str:
-        """
-        Construit l'URL de connexion PostgreSQL pour le driver synchrone (psycopg2).
-        Utilisé principalement pour les migrations (Alembic) qui ne supportent pas toujours l'async.
-        """
-        return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
-
     # ---- Redis (Cache & Pub/Sub) ----
     redis_host: str = Field(default="localhost", description="Adresse du serveur Redis")
     redis_port: int = Field(default=6379, description="Port du serveur Redis")
@@ -75,10 +67,6 @@ class Settings(BaseSettings):
     capture_interface: str = Field(default="auto", description="Interface réseau à écouter (ex: eth0, wlan0). 'auto' détecte la meilleure interface.")
     capture_buffer_size: int = Field(default=1000, description="Taille du buffer circulaire pour les paquets en mémoire")
     capture_flow_timeout: int = Field(default=120, description="Durée maximale d'un flux inactif avant clôture (en secondes)")
-
-    # ---- Auto-Learning & Feedback ----
-    retrain_feedback_threshold: int = Field(default=100, description="Nombre de feedbacks utilisateurs requis pour déclencher un réentraînement")
-    retrain_schedule_hours: int = Field(default=24, description="Intervalle minimal entre deux sessions d'entraînement automatique (heures)")
 
     # ---- API Security ----
     api_key: str = Field(default="change-me-to-a-secure-api-key", description="Clé statique pour protéger l'accès à l'API (Header: X-API-Key)")

@@ -10,7 +10,6 @@ python-multipart==0.0.22
 # -- Database (PostgreSQL) --
 SQLAlchemy[asyncio]==2.0.45
 asyncpg==0.31.0
-psycopg2-binary==2.9.11
 
 # -- Cache (Redis) --
 redis==7.2.0

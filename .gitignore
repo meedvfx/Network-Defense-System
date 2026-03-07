@@ -38,5 +38,6 @@ Thumbs.db
 # AI model artifacts (large binaries)
 ai/artifacts/*.pkl
 ai/artifacts/*.joblib
+ai/artifacts/*.keras
 ai/artifacts/*.model
 models/
