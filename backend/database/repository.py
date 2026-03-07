@@ -26,17 +26,6 @@ async def create_flow(db: AsyncSession, flow_data: dict) -> NetworkFlow:
     return flow
 
 
-async def create_flow_batch(db: AsyncSession, flows_data: List[dict]) -> List[NetworkFlow]:
-    """
-    Insère plusieurs flux en une seule transaction (Bulk Insert).
-    Optimisé pour les forts volumes d'écriture en temps réel.
-    """
-    flows = [NetworkFlow(id=str(uuid4()), **data) for data in flows_data]
-    db.add_all(flows)
-    await db.flush()
-    return flows
-
-
 async def get_recent_flows(db: AsyncSession, limit: int = 100, offset: int = 0) -> List[NetworkFlow]:
     """Récupère les derniers flux capturés pour affichage dans le dashboard."""
     result = await db.execute(

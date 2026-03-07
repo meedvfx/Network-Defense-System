@@ -6,7 +6,7 @@ Architecture production : chargement des modèles pré-entraînés, inférence o
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 import numpy as np
 
@@ -147,11 +147,6 @@ def _run_inference(processed_features: np.ndarray, ip_reputation: float = 0.0) -
         "unsupervised": unsupervised_result,
         "decision": decision,
     }
-
-
-def analyze_batch(flows: List[NetworkFlow]) -> List[Dict[str, Any]]:
-    """Traite une liste de flux (batch processing)."""
-    return [analyze_flow(flow) for flow in flows]
 
 
 def get_status() -> Dict[str, Any]:

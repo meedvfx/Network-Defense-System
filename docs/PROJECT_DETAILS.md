@@ -25,7 +25,6 @@ Documentation exhaustive de la stack technologique, des mécanismes de sécurit�
 | **PostgreSQL** | 16-alpine | RDBMS principal — 7 tables, indexes composites, UUID PK, JSONB |
 | **SQLAlchemy** | 2.0.45 | ORM async avec `AsyncSession`, repository pattern (35+ fonctions) |
 | **asyncpg** | 0.31.0 | Driver PostgreSQL async natif (pool de connexions) |
-| **psycopg2-binary** | 2.9.11 | Driver sync (fallback migrations Alembic) |
 | **Redis** | 7.2.0 | Cache clé-valeur + compteurs métriques + Pub/Sub alertes + threat score global |
 
 Redis est configuré en Docker avec : `--appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru`

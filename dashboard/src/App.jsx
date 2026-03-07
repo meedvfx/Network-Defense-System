@@ -4,7 +4,8 @@ import {
     Radio, Target, TrendingUp, Zap, Eye, Clock, FileText,
     ChevronLeft, ChevronRight, Menu, X, Sun, Moon,
     Download, RefreshCw, Wifi, WifiOff, Database, Layers,
-    Cpu, CheckCircle, XCircle, HardDrive, Play, Loader, Link2, AlertOctagon, Info
+    Cpu, CheckCircle, XCircle, HardDrive, Play, Loader, Link2, AlertOctagon, Info,
+    Key, Lock, Bot, ChevronDown, ChevronUp, Save, TestTube, ExternalLink, Server
 } from 'lucide-react'
 import {
     AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -883,20 +884,203 @@ function MapView() {
 }
 
 // ========================================
-// Reporting View — enhanced
+// LLM Provider Card
+// ========================================
+const LLM_PROVIDER_META = {
+    openai: {
+        color: '#10b981', label: 'ChatGPT (OpenAI)', icon: '🤖', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+        description: 'Modèles GPT d\'OpenAI. Puissants et polyvalents. Idéal pour l\'analyse SOC approfondie.',
+        docUrl: 'https://platform.openai.com/api-keys',
+    },
+    deepseek: {
+        color: '#6366f1', label: 'DeepSeek', icon: '🔷', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['deepseek-chat', 'deepseek-reasoner'],
+        description: 'Modèle open-source de DeepSeek. Excellent rapport qualité/prix, faible coût par token.',
+        docUrl: 'https://platform.deepseek.com/api_keys',
+    },
+    gemini: {
+        color: '#f59e0b', label: 'Google Gemini', icon: '✨', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+        description: 'Modèle multimodal de Google. Grande fenêtre de contexte. Tier gratuit disponible.',
+        docUrl: 'https://aistudio.google.com/app/apikey',
+    },
+    groq: {
+        color: '#f97316', label: 'Groq (Ultra-rapide)', icon: '⚡', badge: 'Cloud',
+        requiresApiKey: true,
+        models: ['llama-3.3-70b-versatile', 'llama3-70b-8192', 'mixtral-8x7b-32768'],
+        description: 'Inférence ultra-rapide grâce aux puces LPU de Groq. Tier gratuit très généreux.',
+        docUrl: 'https://console.groq.com/keys',
+    },
+    ollama: {
+        color: '#34d399', label: 'Ollama (Local)', icon: '🏠', badge: 'Local',
+        requiresApiKey: false,
+        models: ['llama3.1', 'llama3', 'mistral', 'mixtral', 'phi3', 'gemma2', 'codellama'],
+        description: 'Modèles open-source exécutés localement. Gratuit, privé, aucune donnée envoyée en ligne.',
+        docUrl: 'https://ollama.ai',
+    },
+}
+
+function ProviderCard({ id, meta, selected, onClick }) {
+    const isSelected = selected === id
+    return (
+        <div
+            className={`llm-provider-card${isSelected ? ' selected' : ''}`}
+            style={{ '--provider-color': meta.color }}
+            onClick={() => onClick(id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onClick(id)}
+        >
+            <div className="llm-provider-icon">{meta.icon}</div>
+            <div className="llm-provider-info">
+                <div className="llm-provider-name">{meta.label}</div>
+                <div className="llm-provider-badge">{meta.badge}</div>
+            </div>
+            {isSelected && <CheckCircle size={16} className="llm-provider-check" />}
+        </div>
+    )
+}
+
+// ========================================
+// Reporting View — enhanced with LLM config
 // ========================================
 function ReportingView() {
+    // ── Report state ──────────────────────────────────────────────
     const [period, setPeriod]           = useState(24)
     const [detailLevel, setDetailLevel] = useState('Technical')
     const [loading, setLoading]         = useState(false)
     const [report, setReport]           = useState(null)
     const [error, setError]             = useState(null)
 
+    // ── LLM Config state ──────────────────────────────────────────
+    const [configOpen, setConfigOpen]         = useState(false)
+    const [configLoading, setConfigLoading]   = useState(true)
+    const [savingConfig, setSavingConfig]     = useState(false)
+    const [configSaved, setConfigSaved]       = useState(false)
+    const [testStatus, setTestStatus]         = useState(null)   // {success, message}
+    const [testLoading, setTestLoading]       = useState(false)
+
+    const [provider, setProvider]   = useState('ollama')
+    const [model, setModel]         = useState('llama3')
+    const [apiKey, setApiKey]       = useState('')
+    const [maskedKey, setMaskedKey] = useState('')
+    const [hasStoredKey, setHasStoredKey] = useState(false)
+    const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434/api')
+
+    // Derived — always from the static frontend meta, no backend dependency
+    const availableModels = LLM_PROVIDER_META[provider]?.models ?? []
+    const requiresApiKey  = LLM_PROVIDER_META[provider]?.requiresApiKey ?? true
+
+    // ── Load stored config on mount ───────────────────────────────
+    useEffect(() => {
+        fetchAPI('/reporting/llm-config', null)
+            .then((data) => {
+                if (!data) return
+                const savedProvider = data.provider || 'ollama'
+                const providerMeta  = LLM_PROVIDER_META[savedProvider]
+                const savedModel    = data.model || (providerMeta?.models?.[0] ?? '')
+                setProvider(savedProvider)
+                // Only keep saved model if it belongs to that provider's list
+                setModel(
+                    providerMeta?.models?.includes(savedModel)
+                        ? savedModel
+                        : (providerMeta?.models?.[0] ?? savedModel)
+                )
+                setOllamaUrl(data.ollama_base_url || 'http://localhost:11434/api')
+                setHasStoredKey(data.has_api_key || false)
+                setMaskedKey(data.masked_api_key || '')
+            })
+            .finally(() => setConfigLoading(false))
+    }, [])
+
+    // When user picks a different provider, auto-select its first model
+    const handleProviderChange = (newProvider) => {
+        setProvider(newProvider)
+        setTestStatus(null)
+        const firstModel = LLM_PROVIDER_META[newProvider]?.models?.[0] ?? ''
+        setModel(firstModel)
+    }
+
+    // ── Save config ───────────────────────────────────────────────
+    const handleSaveConfig = async () => {
+        setSavingConfig(true); setConfigSaved(false); setTestStatus(null)
+        try {
+            const effectiveKey = apiKey.trim() || maskedKey
+            const payload = {
+                provider,
+                model,
+                api_key: effectiveKey,
+                temperature: 0.2,
+                max_tokens: 2048,
+                ollama_base_url: ollamaUrl,
+            }
+            const res = await fetch(`${API_BASE}/reporting/llm-config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.detail || `Erreur HTTP ${res.status}`)
+            setHasStoredKey(data.has_api_key || false)
+            setMaskedKey(data.masked_api_key || '')
+            setApiKey('')   // clear plain-text field after save
+            setConfigSaved(true)
+            setTimeout(() => setConfigSaved(false), 3000)
+        } catch (err) {
+            setTestStatus({ success: false, message: err.message })
+        } finally {
+            setSavingConfig(false)
+        }
+    }
+
+    // ── Test connection ───────────────────────────────────────────
+    const handleTestConnection = async () => {
+        setTestLoading(true); setTestStatus(null)
+        try {
+            // If user typed a new key use it directly; otherwise send masked key
+            // so the backend resolves it to the stored one
+            const effectiveKey = apiKey.trim() || maskedKey
+            const payload = {
+                provider,
+                model,
+                api_key: effectiveKey,
+                ollama_base_url: ollamaUrl,
+            }
+            const res = await fetch(`${API_BASE}/reporting/test-connection`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            const data = await res.json()
+            if (!res.ok) {
+                // FastAPI errors come as {detail: "..."}
+                setTestStatus({ success: false, message: data.detail || `Erreur HTTP ${res.status}` })
+            } else {
+                setTestStatus(data)
+            }
+        } catch (err) {
+            setTestStatus({ success: false, message: 'Impossible de joindre le backend.' })
+        } finally {
+            setTestLoading(false)
+        }
+    }
+
+    // ── Generate report ───────────────────────────────────────────
     const handleGenerate = async () => {
         setLoading(true); setError(null); setReport(null)
         try {
-            const res = await fetch(`${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=json`, { method: 'POST' })
-            if (!res.ok) throw new Error("Erreur de l'API")
+            const res = await fetch(
+                `${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=json`,
+                { method: 'POST' }
+            )
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                throw new Error(data.detail || "Erreur de l'API")
+            }
             setReport(await res.json())
         } catch (err) {
             setError(err.message || 'Échec de la génération du rapport.')
@@ -907,7 +1091,10 @@ function ReportingView() {
 
     const downloadFormat = async (format) => {
         try {
-            const res = await fetch(`${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=${format}`, { method: 'POST' })
+            const res = await fetch(
+                `${API_BASE}/reporting/generate?period_hours=${period}&detail_level=${detailLevel}&export_format=${format}`,
+                { method: 'POST' }
+            )
             if (!res.ok) throw new Error(`Erreur téléchargement ${format}`)
             const ts = new Date().toISOString().slice(0, 19).replace('T', '_')
             if (format === 'pdf') {
@@ -927,23 +1114,172 @@ function ReportingView() {
         }
     }
 
-    const threatPct = report ? report.threat_index : null
+    const currentProviderMeta = LLM_PROVIDER_META[provider] || LLM_PROVIDER_META.ollama
 
     return (
         <>
             <div className="page-header">
                 <div className="page-title-block">
                     <h2>Reporting IA</h2>
-                    <div className="subtitle">Génération de rapports SOC par LLM</div>
+                    <div className="subtitle">Génération de rapports SOC • Fournisseur actif : <strong>{currentProviderMeta.label}</strong> / {model}</div>
                 </div>
             </div>
 
-            {/* Config panel */}
+            {/* ── LLM Configuration Panel ── */}
+            <div className="panel llm-config-panel" style={{ marginBottom: 'var(--grid-gap)' }}>
+                <div
+                    className="panel-header llm-config-header"
+                    onClick={() => setConfigOpen(o => !o)}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                    <div className="panel-title">
+                        <div className="panel-title-icon" style={{ background: currentProviderMeta.color + '22', color: currentProviderMeta.color }}>
+                            <Bot size={14} />
+                        </div>
+                        Configuration du modèle LLM
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {hasStoredKey && provider !== 'ollama' && (
+                            <span className="llm-key-badge">
+                                <Lock size={11} /> Clé API configurée
+                            </span>
+                        )}
+                        <span className="llm-provider-tag" style={{ background: currentProviderMeta.color + '22', color: currentProviderMeta.color }}>
+                            {currentProviderMeta.icon} {currentProviderMeta.label}
+                        </span>
+                        {configOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
+                </div>
+
+                {configOpen && (
+                    <div className="llm-config-body">
+                        {configLoading ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                <span className="spinner" style={{ width: 18, height: 18 }} /> Chargement de la configuration…
+                            </div>
+                        ) : (
+                        <>
+                        {/* Provider selection */}
+                        <div className="llm-section">
+                            <div className="llm-section-title"><Bot size={13} /> Fournisseur LLM</div>
+                            <div className="llm-provider-grid">
+                                {Object.entries(LLM_PROVIDER_META).map(([id, meta]) => (
+                                    <ProviderCard key={id} id={id} meta={meta} selected={provider} onClick={handleProviderChange} />
+                                ))}
+                            </div>
+                            {currentProviderMeta?.description && (
+                                <div className="llm-provider-desc">
+                                    <Info size={12} /> {currentProviderMeta.description}
+                                    {currentProviderMeta.docUrl && (
+                                        <a href={currentProviderMeta.docUrl} target="_blank" rel="noreferrer" className="llm-doc-link">
+                                            <ExternalLink size={11} /> Obtenir une clé
+                                        </a>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Model selection */}
+                        <div className="llm-section">
+                            <div className="llm-section-title"><Cpu size={13} /> Modèle</div>
+                            <select
+                                className="form-select"
+                                value={model}
+                                onChange={(e) => setModel(e.target.value)}
+                            >
+                                {availableModels.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* API Key (cloud only) */}
+                        {requiresApiKey && (
+                            <div className="llm-section">
+                                <div className="llm-section-title"><Key size={13} /> Clé API
+                                    {hasStoredKey && <span className="llm-key-stored-tag"><CheckCircle size={11} /> Clé stockée côté serveur</span>}
+                                </div>
+                                <div className="llm-apikey-row">
+                                    <div style={{ position: 'relative', flex: 1 }}>
+                                        <Lock size={14} className="llm-apikey-icon" />
+                                        <input
+                                            type="password"
+                                            className="form-input llm-apikey-input"
+                                            value={apiKey}
+                                            onChange={(e) => setApiKey(e.target.value)}
+                                            placeholder={hasStoredKey ? maskedKey || '••••••••••••••••' : 'Collez votre clé API ici…'}
+                                            autoComplete="new-password"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="llm-security-note">
+                                    <Lock size={11} /> La clé est stockée uniquement côté serveur et n'est jamais exposée dans l'interface.
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ollama URL */}
+                        {provider === 'ollama' && (
+                            <div className="llm-section">
+                                <div className="llm-section-title"><Server size={13} /> URL du serveur Ollama</div>
+                                <input
+                                    className="form-input"
+                                    value={ollamaUrl}
+                                    onChange={(e) => setOllamaUrl(e.target.value)}
+                                    placeholder="http://localhost:11434/api"
+                                />
+                            </div>
+                        )}
+
+                        {/* Test connection + status */}
+                        <div className="llm-section">
+                            <div className="llm-actions-row">
+                                <button
+                                    className="btn btn-ghost"
+                                    onClick={handleTestConnection}
+                                    disabled={testLoading}
+                                >
+                                    {testLoading
+                                        ? <><span className="spinner" style={{ width: 13, height: 13, borderWidth: 2 }} /> Test en cours…</>
+                                        : <><TestTube size={13} /> Tester la connexion</>
+                                    }
+                                </button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSaveConfig}
+                                    disabled={savingConfig}
+                                >
+                                    {savingConfig
+                                        ? <><span className="spinner" style={{ width: 13, height: 13, borderWidth: 2 }} /> Sauvegarde…</>
+                                        : configSaved
+                                        ? <><CheckCircle size={13} /> Sauvegardé !</>
+                                        : <><Save size={13} /> Sauvegarder la configuration</>
+                                    }
+                                </button>
+                            </div>
+
+                            {testStatus?.message && (
+                                <div className={`llm-test-status ${testStatus.success ? 'success' : 'error'}`}>
+                                    {testStatus.success
+                                        ? <CheckCircle size={14} />
+                                        : <XCircle size={14} />
+                                    }
+                                    {testStatus.message}
+                                </div>
+                            )}
+                        </div>
+                        </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* ── Report Generation Panel ── */}
             <div className="panel" style={{ marginBottom: 'var(--grid-gap)' }}>
                 <div className="panel-header">
                     <div className="panel-title">
                         <div className="panel-title-icon"><FileText size={14} /></div>
-                        Configuration du rapport
+                        Génération du rapport
                     </div>
                 </div>
                 <div className="report-controls">
@@ -965,7 +1301,10 @@ function ReportingView() {
                     <div className="form-group">
                         <label className="form-label">&nbsp;</label>
                         <button className="btn btn-primary" onClick={handleGenerate} disabled={loading}>
-                            {loading ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Analyse LLM...</> : <><Zap size={14} /> Générer la synthèse</>}
+                            {loading
+                                ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Analyse LLM…</>
+                                : <><Zap size={14} /> Générer la synthèse</>
+                            }
                         </button>
                     </div>
 
@@ -993,16 +1332,15 @@ function ReportingView() {
                 )}
             </div>
 
-            {/* Report content */}
+            {/* ── Report Content ── */}
             {report && (
                 <>
-                    {/* Metric cards */}
                     <div className="report-metric-row">
                         {[
-                            { label: 'Threat Index', value: `${report.threat_index}/100` },
-                            { label: 'Total alertes',  value: report.metrics?.total_alerts  ?? '—' },
-                            { label: 'Flux analysés',  value: report.metrics?.total_flows   ?? '—' },
-                            { label: 'Taux anomalie',  value: report.metrics?.anomaly_rate  != null ? `${Math.round(report.metrics.anomaly_rate * 100)}%` : '—' },
+                            { label: 'Threat Index',  value: `${report.threat_index}/100` },
+                            { label: 'Total alertes', value: report.metrics?.total_alerts  ?? '—' },
+                            { label: 'Flux analysés', value: report.metrics?.total_flows   ?? '—' },
+                            { label: 'Taux anomalie', value: report.metrics?.anomaly_rate  != null ? `${Math.round(report.metrics.anomaly_rate * 100)}%` : '—' },
                         ].map(m => (
                             <div key={m.label} className="report-metric-card fade-in">
                                 <div className="report-metric-label">{m.label}</div>
@@ -1011,13 +1349,11 @@ function ReportingView() {
                         ))}
                     </div>
 
-                    {/* Executive Summary */}
                     <div className="executive-summary-card fade-in">
                         <h4><Zap size={14} /> Résumé Exécutif IA</h4>
                         <p>{report.llm_analysis?.executive_summary || 'Aucun résumé disponible.'}</p>
                     </div>
 
-                    {/* Threat ring + detailed analysis */}
                     <div className="dashboard-grid" style={{ marginBottom: 'var(--grid-gap)' }}>
                         <div className="panel">
                             <div className="panel-header">

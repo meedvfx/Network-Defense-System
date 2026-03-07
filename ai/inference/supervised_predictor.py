@@ -144,20 +144,3 @@ def predict_batch(predictor: Dict[str, Any], features: np.ndarray) -> List[Dict[
         })
 
     return results
-
-
-def get_top_k(predictor: Dict[str, Any], features: np.ndarray, k: int = 3) -> List[Dict[str, float]]:
-    features = _to_2d(features)
-    model = predictor["model"]
-    class_names = predictor["class_names"]
-
-    probabilities = model.predict(features, verbose=0)[0]
-    top_indices = np.argsort(probabilities)[::-1][:k]
-
-    return [
-        {
-            "class": _resolve_class_name(class_names, i),
-            "probability": round(float(probabilities[i]), 6),
-        }
-        for i in top_indices
-    ]

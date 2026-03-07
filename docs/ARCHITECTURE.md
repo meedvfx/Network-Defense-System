@@ -395,7 +395,7 @@ erDiagram
 ### 6.3 Repository Pattern
 
 Le fichier `backend/database/repository.py` expose **35+ fonctions** async couvrant toutes les opérations CRUD :
-- **Flows** : `create_flow`, `create_flow_batch` (bulk insert), `get_recent_flows`, `count_flows`
+- **Flows** : `create_flow`, `get_recent_flows`, `count_flows`
 - **Predictions** : `create_prediction`, `get_prediction_by_flow`, `get_attack_distribution` (pie chart)
 - **Anomalies** : `create_anomaly`, `get_anomalies`, `get_anomaly_rate` (ratio anomal/total)
 - **Alertes** : `create_alert`, `get_alerts` (filtres + pagination), `update_alert_status`, `get_alert_stats`, `get_top_alert_ips`
@@ -428,7 +428,7 @@ Le fichier `backend/database/repository.py` expose **35+ fonctions** async couvr
 
 Base `python:3.11-slim` avec dépendances système :
 - `libpcap-dev` + `tcpdump` (Scapy capture)
-- `libpq-dev` + `gcc` (asyncpg/psycopg2 compilation)
+- `gcc` (compilation d'extensions C)
 
 ---
 
