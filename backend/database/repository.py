@@ -180,6 +180,7 @@ async def get_top_alert_ips(db: AsyncSession, limit: int = 10, hours: int = 24) 
             NetworkFlow.src_ip,
             func.count(Alert.id).label("alert_count"),
             func.avg(Alert.threat_score).label("avg_threat"),
+            func.coalesce(func.max(Alert.attack_type), "Unknown").label("attack_type"),
         )
         .join(NetworkFlow, Alert.flow_id == NetworkFlow.id)
         .where(Alert.timestamp >= since)
@@ -188,7 +189,12 @@ async def get_top_alert_ips(db: AsyncSession, limit: int = 10, hours: int = 24) 
         .limit(limit)
     )
     return [
-        {"ip": row[0], "alert_count": row[1], "avg_threat": round(float(row[2]), 3)}
+        {
+            "ip": row[0],
+            "alert_count": row[1],
+            "avg_threat": round(float(row[2] or 0), 3),
+            "attack_type": row[3] or "Unknown",
+        }
         for row in result.all()
     ]
 

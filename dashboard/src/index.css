@@ -928,6 +928,24 @@ body {
 
 .map-container .leaflet-container { height: 100%; background: var(--bg-input); }
 
+.attack-cluster-icon {
+  background: transparent;
+  border: none;
+}
+
+.attack-cluster-marker {
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,0.85);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-family: 'Inter', sans-serif;
+}
+
 /* ===================================================
    CHART EMPTY STATE
    =================================================== */
@@ -1516,6 +1534,11 @@ body {
   color: var(--text-primary) !important;
 }
 .leaflet-popup-tip { background: var(--bg-card) !important; }
+
+.leaflet-popup-content {
+  margin: 10px 12px !important;
+  color: var(--text-primary) !important;
+}
 
 /* ===================================================
    MOBILE NAV

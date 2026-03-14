@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
     Shield, AlertTriangle, Activity, Globe, BarChart3, Bell, Settings,
     Radio, Target, TrendingUp, Zap, Eye, Clock, FileText,
@@ -63,6 +63,35 @@ const normalizeProtocolDistribution = (distribution = []) =>
         }))
         .filter((item) => item.count >= 0)
         .sort((a, b) => b.count - a.count)
+
+const normalizeMapMarkers = (markers = []) =>
+    (Array.isArray(markers) ? markers : [])
+        .map((item) => {
+            const lat = Number(item?.lat)
+            const lng = Number(item?.lng)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+            return {
+                ip: String(item?.ip || 'Unknown'),
+                lat,
+                lng,
+                country: item?.country ? String(item.country) : 'Unknown',
+                city: item?.city ? String(item.city) : 'Unknown',
+                attack_type: item?.attack_type ? String(item.attack_type) : 'Unknown',
+                alert_count: Number(item?.alert_count || 0),
+                avg_threat: Number(item?.avg_threat || 0),
+                is_estimated: Boolean(item?.is_estimated),
+            }
+        })
+        .filter(Boolean)
+
+function getMapStatusMessage(meta) {
+    if (!meta) return ''
+    if (meta.geo_status === 'db_unavailable') {
+        return 'Service de carte indisponible: base de donnees inaccessible.'
+    }
+    // Les cas partiels sont traites silencieusement pour eviter le bruit visuel.
+    return ''
+}
 
 function getSevClass(severity) {
     if (!severity) return 'low'
@@ -322,7 +351,62 @@ function AttackMap({ markers }) {
     const tileUrl = theme === 'dark'
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
         : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    const validMarkers = markers.filter(m => m.lat != null && m.lng != null)
+
+    const groupedMarkers = useMemo(() => {
+        const groups = new Map()
+        for (const marker of markers) {
+            const zoneKey = [
+                marker.country || 'Unknown',
+                marker.city || 'Unknown',
+                marker.lat.toFixed(2),
+                marker.lng.toFixed(2),
+            ].join('|')
+            const existing = groups.get(zoneKey)
+            if (existing) {
+                existing.items.push(marker)
+                existing.alert_count += Number(marker.alert_count || 0)
+                existing.avg_threat_sum += Number(marker.avg_threat || 0)
+                continue
+            }
+            groups.set(zoneKey, {
+                lat: marker.lat,
+                lng: marker.lng,
+                country: marker.country,
+                city: marker.city,
+                alert_count: Number(marker.alert_count || 0),
+                avg_threat_sum: Number(marker.avg_threat || 0),
+                estimated_count: marker.is_estimated ? 1 : 0,
+                items: [marker],
+            })
+        }
+        return Array.from(groups.values()).map((group) => {
+            const attackTypeCounts = group.items.reduce((acc, item) => {
+                const key = item.attack_type || 'Unknown'
+                acc[key] = (acc[key] || 0) + 1
+                return acc
+            }, {})
+            const attackType = Object.entries(attackTypeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+            return {
+                ...group,
+                count: group.items.length,
+                avg_threat: group.items.length ? (group.avg_threat_sum / group.items.length) : 0,
+                attack_type: attackType,
+                has_estimated: group.estimated_count > 0,
+            }
+        })
+    }, [markers])
+
+    const createZoneIcon = useCallback((count, avgThreat) => {
+        const size = count >= 10 ? 34 : count >= 5 ? 30 : 24
+        const color = avgThreat >= 0.8 ? '#f87171' : avgThreat >= 0.5 ? '#fbbf24' : '#4f8ef7'
+        return L.divIcon({
+            className: 'attack-cluster-icon',
+            html: `<div class="attack-cluster-marker" style="width:${size}px;height:${size}px;background:${color};box-shadow:0 0 0 3px ${color}33,0 6px 14px ${color}55;">${count}</div>`,
+            iconSize: [size, size],
+            iconAnchor: [Math.round(size / 2), Math.round(size / 2)],
+        })
+    }, [])
+
     return (
         <div className="map-container">
             <MapContainer key={theme} center={[20, 0]} zoom={2} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
@@ -330,17 +414,37 @@ function AttackMap({ markers }) {
                     url={tileUrl}
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com">CARTO</a>'
                 />
-                {validMarkers.map((m, i) => (
-                    <Marker key={i} position={[m.lat, m.lng]} icon={attackIcon}>
+                {groupedMarkers.map((m, i) => (
+                    <Marker key={i} position={[m.lat, m.lng]} icon={m.count > 1 ? createZoneIcon(m.count, m.avg_threat) : attackIcon}>
                         <Popup>
                             <div style={{ padding: '4px 2px', minWidth: '160px' }}>
-                                <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '6px', fontSize: '13px' }}>{m.ip}</div>
+                                <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '6px', fontSize: '13px' }}>
+                                    {m.count > 1 ? `${m.count} sources` : (m.items[0]?.ip || 'Unknown')}
+                                </div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
                                     📍 {m.city || '—'}, {m.country || '—'}
                                 </div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                     🔔 {m.alert_count} alerte{m.alert_count > 1 ? 's' : ''}
                                 </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                    🛡️ {m.attack_type || 'Unknown'}
+                                </div>
+                                {m.has_estimated && (
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-orange)', marginTop: '4px' }}>
+                                        Position approximative
+                                    </div>
+                                )}
+                                {m.count > 1 && (
+                                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-secondary)', maxHeight: '100px', overflowY: 'auto' }}>
+                                        {m.items.slice(0, 6).map((item, idx) => (
+                                            <div key={`${item.ip}-${idx}`}>
+                                                {item.ip} · {item.attack_type || 'Unknown'}{item.is_estimated ? ' · ~' : ''}
+                                            </div>
+                                        ))}
+                                        {m.items.length > 6 && <div>+{m.items.length - 6} autres IP...</div>}
+                                    </div>
+                                )}
                             </div>
                         </Popup>
                     </Marker>
@@ -455,6 +559,8 @@ function DashboardOverview() {
     const [traffic, setTraffic]               = useState([])
     const [distribution, setDistribution]     = useState([])
     const [markers, setMarkers]               = useState([])
+    const [mapMeta, setMapMeta]               = useState(null)
+    const [mapStatusMessage, setMapStatusMessage] = useState('')
     const [captureRunning, setCaptureRunning] = useState(false)
     const [captureMessage, setCaptureMessage] = useState('')
     const [captureInterfaces, setCaptureInterfaces] = useState([])
@@ -478,7 +584,9 @@ function DashboardOverview() {
             setAlerts(Array.isArray(recentAlerts) ? recentAlerts : [])
             setTraffic(normalizeTrafficSeries(trafficData?.series || []))
             setDistribution(toPieDistribution(attackData?.distribution || []))
-            setMarkers(mapData?.markers || [])
+            setMarkers(normalizeMapMarkers(mapData?.markers || []))
+            setMapMeta(mapData?.meta || null)
+            setMapStatusMessage(getMapStatusMessage(mapData?.meta))
             setCaptureRunning(Boolean(captureStatus?.is_running))
             setCaptureStats(captureStatus || { packets_captured: 0, active_flows: 0, completed_flows: 0 })
             setCaptureInterfaces(interfacesData?.available_interfaces || [])
@@ -640,8 +748,13 @@ function DashboardOverview() {
                             <div className="panel-title-icon"><Globe size={14} /></div>
                             Carte des attaques
                         </div>
-                        <span className="panel-badge">{markers.length} sources</span>
+                        <span className="panel-badge">{mapMeta?.localized ?? markers.length} sources localisees</span>
                     </div>
+                    {mapStatusMessage && (
+                        <div className="info-message error" style={{ marginBottom: '12px' }}>
+                            <AlertOctagon size={14} /> {mapStatusMessage}
+                        </div>
+                    )}
                     <AttackMap markers={markers} />
                 </div>
                 <div className="panel">
@@ -816,12 +929,17 @@ function TrafficView() {
 // ========================================
 function MapView() {
     const [markers, setMarkers] = useState([])
+    const [mapMeta, setMapMeta] = useState(null)
+    const [mapStatusMessage, setMapStatusMessage] = useState('')
 
     useEffect(() => {
         let mounted = true
         const load = async () => {
             const data = await fetchAPI('/geo/attack-map', { markers: [] })
-            if (mounted) setMarkers(data?.markers || [])
+            if (!mounted) return
+            setMarkers(normalizeMapMarkers(data?.markers || []))
+            setMapMeta(data?.meta || null)
+            setMapStatusMessage(getMapStatusMessage(data?.meta))
         }
         load()
         const interval = setInterval(load, 5000)
@@ -836,7 +954,7 @@ function MapView() {
                     <div className="subtitle">Géolocalisation des sources malveillantes</div>
                 </div>
                 <div className="header-actions">
-                    <span className="panel-badge danger">{markers.length} sources identifiées</span>
+                    <span className="panel-badge danger">{mapMeta?.localized ?? markers.length} sources identifiees</span>
                 </div>
             </div>
             <div className="panel">
@@ -847,6 +965,11 @@ function MapView() {
                     </div>
                     <span className="panel-badge">{markers.length} marqueurs</span>
                 </div>
+                {mapStatusMessage && (
+                    <div className="info-message error" style={{ marginBottom: '12px' }}>
+                        <AlertOctagon size={14} /> {mapStatusMessage}
+                    </div>
+                )}
                 <AttackMap markers={markers} />
 
                 {markers.length > 0 && (
@@ -860,6 +983,7 @@ function MapView() {
                                     <th>IP</th>
                                     <th>Pays</th>
                                     <th>Ville</th>
+                                    <th>Type</th>
                                     <th>Alertes</th>
                                 </tr>
                             </thead>
@@ -869,6 +993,7 @@ function MapView() {
                                         <td style={{ color: 'var(--accent-red)' }}>{m.ip}</td>
                                         <td>{m.country || '—'}</td>
                                         <td>{m.city || '—'}</td>
+                                        <td>{m.attack_type || 'Unknown'}</td>
                                         <td>
                                             <span className="sev-pill critical">{m.alert_count}</span>
                                         </td>

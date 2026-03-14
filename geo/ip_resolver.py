@@ -33,18 +33,15 @@ def is_public_ip(ip: str) -> bool:
     Utile pour éviter d'envoyer des IPs locales aux services de géolocalisation.
     """
     try:
-        addr = ipaddress.ip_address(ip)
-
-        # Vérification IPv6
-        if addr.version == 6:
-            return not addr.is_private and not addr.is_loopback
-
-        #  Vérification IPv4 (Privé + Réservé)
-        for network in PRIVATE_RANGES + RESERVED_RANGES:
-            if addr in network:
-                return False
-
-        return True
+        addr = ipaddress.ip_address(sanitize_ip(ip))
+        return not (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_link_local
+            or addr.is_unspecified
+        )
     except ValueError:
         return False
 
@@ -105,7 +102,31 @@ def sanitize_ip(ip: str) -> str:
     Supprime les espaces et vérifie la conformité (v4/v6).
     Lève une erreur si l'IP est malformée.
     """
-    ip = ip.strip()
+    if ip is None:
+        raise ValueError("Adresse IP invalide : None")
+
+    raw = str(ip).strip()
+    if not raw:
+        raise ValueError("Adresse IP invalide : vide")
+
+    # Support des formats observés en entrée: "1.2.3.4:443", "[2001:db8::1]:443",
+    # IPv6 link-local avec zone "fe80::1%eth0", ou valeurs encapsulées dans des tokens.
+    if raw.startswith("[") and "]" in raw:
+        ip = raw[1:raw.index("]")]
+    else:
+        ip = raw
+
+    if "%" in ip:
+        ip = ip.split("%", 1)[0]
+
+    # IPv4:port -> IPv4
+    if "." in ip and ip.count(":") == 1:
+        candidate_ip, candidate_port = ip.rsplit(":", 1)
+        if candidate_port.isdigit():
+            ip = candidate_ip
+
+    ip = ip.strip("\"'[](),; ")
+
     try:
         return str(ipaddress.ip_address(ip))
     except ValueError:

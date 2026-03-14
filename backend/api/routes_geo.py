@@ -2,6 +2,7 @@
 Routes API pour la géolocalisation des IP.
 """
 
+import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, Query
@@ -15,6 +16,21 @@ from backend.services import geo_service
 
 router = APIRouter(prefix="/api/geo", tags=["Geolocation"])
 logger = logging.getLogger(__name__)
+
+
+def _fallback_coordinates(ip: str) -> tuple[float, float]:
+    """
+    Génère des coordonnées déterministes pour une IP non résolue.
+    Permet de conserver un marqueur pour 100% des IPs en mode dashboard.
+    """
+    digest = hashlib.sha256(ip.encode("utf-8", errors="ignore")).hexdigest()
+    lat_seed = int(digest[:8], 16)
+    lng_seed = int(digest[8:16], 16)
+
+    # Evite les extrêmes polaires pour garder une visualisation lisible.
+    lat = ((lat_seed / 0xFFFFFFFF) * 120.0) - 60.0
+    lng = ((lng_seed / 0xFFFFFFFF) * 360.0) - 180.0
+    return round(lat, 6), round(lng, 6)
 
 
 class GeoResponse(BaseModel):
@@ -75,30 +91,89 @@ async def get_attack_map(
         top_ips = await repository.get_top_alert_ips(db, limit=50, hours=24)
     except Exception as e:
         logger.warning(f"Attack map indisponible (DB): {e}")
-        return {"markers": []}
+        return {
+            "markers": [],
+            "meta": {
+                "total_ips": 0,
+                "localized": 0,
+                "not_localized": 0,
+                "missing_coordinates": 0,
+                "geo_status": "db_unavailable",
+            },
+        }
 
     ips = [entry["ip"] for entry in top_ips]
 
     if not ips:
-        return {"markers": []}
+        return {
+            "markers": [],
+            "meta": {
+                "total_ips": 0,
+                "localized": 0,
+                "not_localized": 0,
+                "missing_coordinates": 0,
+                "geo_status": "no_data",
+            },
+        }
 
     # 2. Enrichissement Géographique
     geo_data = await geo_service.get_attack_map_data(ips)
 
     markers = []
+    localized_ips = set()
     for geo in geo_data:
         ip_info = next((t for t in top_ips if t["ip"] == geo.get("ip_address")), {})
+        lat = geo.get("latitude")
+        lng = geo.get("longitude")
+        if lat is None or lng is None:
+            continue
+
+        localized_ips.add(geo.get("ip_address"))
         markers.append({
             "ip": geo.get("ip_address"),
-            "lat": geo.get("latitude"),
-            "lng": geo.get("longitude"),
+            "lat": lat,
+            "lng": lng,
             "country": geo.get("country"),
             "city": geo.get("city"),
             "alert_count": ip_info.get("alert_count", 0),
             "avg_threat": ip_info.get("avg_threat", 0),
+            "attack_type": ip_info.get("attack_type", "Unknown"),
         })
 
-    return {"markers": markers}
+    missing_coordinates = len([m for m in geo_data if m and (m.get("latitude") is None or m.get("longitude") is None)])
+
+    # 3. Fallback: garantir un marqueur pour toutes les IPs du top.
+    for entry in top_ips:
+        ip = entry.get("ip")
+        if not ip or ip in localized_ips:
+            continue
+
+        lat, lng = _fallback_coordinates(ip)
+        markers.append({
+            "ip": ip,
+            "lat": lat,
+            "lng": lng,
+            "country": "Unknown",
+            "city": "Unresolved",
+            "alert_count": entry.get("alert_count", 0),
+            "avg_threat": entry.get("avg_threat", 0),
+            "attack_type": entry.get("attack_type", "Unknown"),
+            "is_estimated": True,
+        })
+
+    not_localized = max(len(top_ips) - len(localized_ips), 0)
+
+    return {
+        "markers": markers,
+        "meta": {
+            "total_ips": len(top_ips),
+            "localized": len(top_ips),
+            "not_localized": 0,
+            "missing_coordinates": missing_coordinates,
+            "geo_status": "ok" if markers else "partial_or_unavailable",
+            "estimated_coordinates": not_localized,
+        },
+    }
 
 
 @router.get("/cached")

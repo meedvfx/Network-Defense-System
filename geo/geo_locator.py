@@ -4,7 +4,7 @@ Supporte ip-api.com (gratuit) avec cache Redis.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import httpx
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # ---- Constantes ----
 IP_API_URL = "http://ip-api.com/json/{ip}?fields=status,message,country,countryCode,region,regionName,city,lat,lon,isp,org,as,query"
 IP_API_BATCH_URL = "http://ip-api.com/batch"
+IPWHOIS_URL = "https://ipwho.is/{ip}"
 
 
 class GeoLocator:
@@ -65,9 +66,29 @@ class GeoLocator:
 
         # 3. Appel API Externe
         try:
-            return await self._query_ip_api(ip)
+            return await self._query_with_fallback(ip)
         except Exception as e:
             logger.error(f"Erreur géolocalisation pour {ip}: {e}")
+            return None
+
+    async def _query_with_fallback(self, ip: str) -> Optional[Dict[str, Any]]:
+        primary = await self._safe_primary_lookup(ip)
+        if primary:
+            return primary
+        return await self._safe_fallback_lookup(ip)
+
+    async def _safe_primary_lookup(self, ip: str) -> Optional[Dict[str, Any]]:
+        try:
+            return await self._query_ip_api(ip)
+        except Exception as e:
+            logger.warning(f"Primary GeoIP provider failed for {ip}: {e}")
+            return None
+
+    async def _safe_fallback_lookup(self, ip: str) -> Optional[Dict[str, Any]]:
+        try:
+            return await self._query_ipwhois(ip)
+        except Exception as e:
+            logger.warning(f"Fallback GeoIP provider failed for {ip}: {e}")
             return None
 
     async def _query_ip_api(self, ip: str) -> Optional[Dict[str, Any]]:
@@ -107,20 +128,79 @@ class GeoLocator:
 
         return result
 
-    async def locate_batch(self, ips: list) -> list:
+    async def _query_ipwhois(self, ip: str) -> Optional[Dict[str, Any]]:
+        """
+        Fallback GeoIP quand ip-api échoue (timeout, rate limit, indisponibilité).
+        """
+        url = IPWHOIS_URL.format(ip=ip)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+        if not data.get("success", False):
+            logger.warning(f"ipwho.is failed for {ip}: {data.get('message', 'unknown')}")
+            return None
+
+        connection = data.get("connection") or {}
+        result = {
+            "ip_address": ip,
+            "country": data.get("country", "Unknown"),
+            "country_code": data.get("country_code", ""),
+            "region": data.get("region", ""),
+            "city": data.get("city", "Unknown"),
+            "latitude": data.get("latitude", 0.0),
+            "longitude": data.get("longitude", 0.0),
+            "isp": connection.get("isp", "Unknown"),
+            "asn": connection.get("asn", ""),
+            "organization": connection.get("org", ""),
+            "is_local": False,
+        }
+
+        self._local_cache[ip] = result
+        return result
+
+    async def locate_batch(self, ips: List[str]) -> List[Dict[str, Any]]:
         """
         Géolocalise une liste d'IPs en une seule requête (Batch).
         Optimisation critique pour les performances du dashboard.
         L'API ip-api.com supporte jusqu'à 100 IPs par requête POST.
         """
+        # Nettoyage + déduplication conservant l'ordre
+        normalized_ips: List[str] = []
+        seen = set()
+        for raw_ip in ips:
+            try:
+                ip = sanitize_ip(raw_ip)
+            except ValueError:
+                continue
+            if ip in seen:
+                continue
+            seen.add(ip)
+            normalized_ips.append(ip)
+
         # Filtrer pour ne garder que les IPs publiques
-        public_ips = [ip for ip in ips if is_public_ip(ip)]
+        public_ips = [ip for ip in normalized_ips if is_public_ip(ip)]
 
         if not public_ips:
             return []
 
+        results: List[Dict[str, Any]] = []
+
+        # Retour immédiat pour les IPs déjà en cache
+        remaining = []
+        for ip in public_ips:
+            cached = self._local_cache.get(ip)
+            if cached:
+                results.append(cached)
+            else:
+                remaining.append(ip)
+
+        if not remaining:
+            return results
+
         # Tronquer à 100 IPs (limite stricte de l'API gratuite)
-        batch = public_ips[:100]
+        batch = remaining[:100]
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -131,7 +211,6 @@ class GeoLocator:
                 response.raise_for_status()
                 data = response.json()
 
-            results = []
             for item in data:
                 if item.get("status") == "success":
                     result = {
@@ -149,11 +228,24 @@ class GeoLocator:
                     self._local_cache[item["query"]] = result
                     results.append(result)
 
+            # Fallback par IP pour les entrées non résolues par le batch
+            resolved_ips = {r.get("ip_address") for r in results if r.get("ip_address")}
+            missing_ips = [ip for ip in batch if ip not in resolved_ips]
+            for ip in missing_ips:
+                fallback = await self._query_with_fallback(ip)
+                if fallback:
+                    results.append(fallback)
+
             return results
 
         except Exception as e:
             logger.error(f"Erreur batch géolocalisation: {e}")
-            return []
+            # Dégradation contrôlée: fallback unitaire pour conserver des données exploitables.
+            for ip in batch:
+                fallback = await self._query_with_fallback(ip)
+                if fallback:
+                    results.append(fallback)
+            return results
 
     def clear_cache(self):
         """Vide le cache local (utile pour tests ou refresh forcé)."""
